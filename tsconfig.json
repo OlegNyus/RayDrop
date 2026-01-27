@@ -10,7 +10,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vitest/globals", "node"],
+    "baseUrl": ".",
     "paths": {
       "@client/*": ["./client/src/*"],
       "@server/*": ["./server/src/*"],
@@ -19,10 +19,12 @@
   },
   "include": [
     "tests/**/*",
+    "e2e/**/*",
     "vitest.config.ts"
   ],
-  "references": [
-    { "path": "./client" },
-    { "path": "./server" }
+  "exclude": [
+    "node_modules",
+    "client",
+    "server"
   ]
 }
