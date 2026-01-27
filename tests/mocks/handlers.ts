@@ -1,7 +1,8 @@
 import { http, HttpResponse, delay } from 'msw';
 import { apiResponses, apiErrors } from '../fixtures/config';
 
-const API_BASE = 'http://localhost:3001/api';
+// Use wildcard to match any origin (handles both relative and absolute URLs)
+const API_BASE = '*/api';
 
 /**
  * Default handlers - successful responses

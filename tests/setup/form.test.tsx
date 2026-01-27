@@ -349,9 +349,10 @@ describe('SetupForm', () => {
         await user.type(screen.getByPlaceholderText('your-company'), input);
         await user.click(screen.getByRole('button', { name: /Validate & Save/i }));
 
-        // Should show some validation error
-        const error = screen.queryByText(/subdomain/i);
-        expect(error).toBeInTheDocument();
+        // Should show validation error (either "at least 2 characters" or "letters, numbers, and hyphens")
+        const shortError = screen.queryByText(/at least 2 characters/i);
+        const formatError = screen.queryByText(/letters, numbers, and hyphens/i);
+        expect(shortError || formatError).toBeTruthy();
       }
     );
   });
