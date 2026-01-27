@@ -29,3 +29,9 @@ npm-debug.log*
 # User data (server storage)
 config/
 testCases/
+
+# Test coverage and results
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
