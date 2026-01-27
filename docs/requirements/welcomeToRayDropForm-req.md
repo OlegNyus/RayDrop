@@ -241,37 +241,37 @@ Client                    Server                      Xray Cloud         File Sy
 
 | ID | Edge Case | Current Behavior | Notes |
 |----|-----------|------------------|-------|
-| E1 | URL with trailing slash | Accepted and stored as-is | No normalization |
-| E2 | URL without trailing slash | Accepted | Works correctly |
-| E3 | URL with path (e.g., `https://foo.atlassian.net/jira`) | Accepted | Only hostname validated |
-| E4 | URL with port number | Accepted | URL parsing handles it |
-| E5 | HTTP URL (not HTTPS) | Accepted | No HTTPS enforcement |
+| E1 | Subdomain with trailing/leading spaces | Auto-trimmed by `buildJiraUrl()` | Safe |
+| E2 | Subdomain with uppercase letters | Auto-lowercased by `buildJiraUrl()` | Safe |
+| E3 | Subdomain starting/ending with hyphen | Rejected by regex validation | Error shown |
+| E4 | Subdomain with special characters | Rejected by regex validation | Only alphanumeric and hyphens allowed |
+| E5 | HTTP URL (not HTTPS) | N/A - HTTPS enforced | `buildJiraUrl()` always generates HTTPS |
 | E6 | Component unmount during API call | Timer cleanup via useEffect | Prevents memory leak |
 | E7 | Double-click submit | First click starts loading, subsequent clicks disabled | Safe |
 | E8 | Form re-render with new initialConfig | Values not updated | useState only uses initialConfig once |
 | E9 | Very long credentials | No max length validation | Could cause issues |
 | E10 | Unicode in credentials | Passed through as-is | Should work |
 | E11 | XSS in credentials | React escapes output | Safe |
-| E12 | Atlassian server (non-cloud) URL | Rejected | Only .atlassian.net/.atlassian.com allowed |
+| E12 | Editing existing config with full URL | `extractSubdomain()` parses subdomain from URL | Backward compatible |
 
 ---
 
 ## 8. Gaps and Potential Improvements
 
-| ID | Gap | Impact | Recommendation |
-|----|-----|--------|----------------|
-| G1 | Client Secret displayed as plain text | Security concern | Use `type="password"` input |
-| G2 | No maximum length validation | Potential for very large payloads | Add max length (e.g., 500 chars) |
-| G3 | No minimum length validation | Users might enter partial credentials | Add sensible minimums |
-| G4 | Rate limiting only on test-connection, not on save | Could abuse save endpoint | Apply rate limiting to save endpoint |
-| G5 | In-memory rate limiting resets on server restart | Can bypass with restart | Use Redis or persistent storage |
-| G6 | No HTTPS enforcement on Jira URL | Insecure connections possible | Validate protocol is HTTPS |
-| G7 | Server validates URL format but not Atlassian domain | Inconsistent with client | Add Atlassian domain check server-side |
-| G8 | initialConfig changes not reflected | Stale data if parent updates config | Use useEffect to sync or key prop |
-| G9 | No timeout on API calls (client-side) | UI could hang indefinitely | Add fetch timeout |
-| G10 | Xray API timeout is 30 seconds | Long wait for users | Consider shorter timeout with retry |
-| G11 | No credential masking in stored config | Secrets in plain text on disk | Consider encryption at rest |
-| G12 | Test result persists until next action | Could be confusing | Auto-clear after timeout |
+| ID | Gap | Impact | Status | Recommendation |
+|----|-----|--------|--------|----------------|
+| G1 | Client Secret displayed as plain text | Security concern | OPEN | Use `type="password"` input |
+| G2 | No maximum length validation | Potential for very large payloads | OPEN | Add max length (e.g., 500 chars) |
+| G3 | No minimum length validation | Users might enter partial credentials | OPEN | Add sensible minimums |
+| G4 | Rate limiting only on test-connection, not on save | Could abuse save endpoint | OPEN | Apply rate limiting to save endpoint |
+| G5 | In-memory rate limiting resets on server restart | Can bypass with restart | OPEN | Use Redis or persistent storage |
+| G6 | No HTTPS enforcement on Jira URL | Insecure connections possible | **RESOLVED** | `buildJiraUrl()` always generates HTTPS |
+| G7 | Server validates URL format but not Atlassian domain | Inconsistent with client | **RESOLVED** | URL auto-generated from subdomain |
+| G8 | initialConfig changes not reflected | Stale data if parent updates config | OPEN | Use useEffect to sync or key prop |
+| G9 | No timeout on API calls (client-side) | UI could hang indefinitely | OPEN | Add fetch timeout |
+| G10 | Xray API timeout is 30 seconds | Long wait for users | OPEN | Consider shorter timeout with retry |
+| G11 | No credential masking in stored config | Secrets in plain text on disk | OPEN | Consider encryption at rest |
+| G12 | Test result persists until next action | Could be confusing | OPEN | Auto-clear after timeout |
 
 ---
 

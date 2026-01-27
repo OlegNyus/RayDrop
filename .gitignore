@@ -1,6 +1,12 @@
 # Mockup folder
 mockup/
 
+# Claude Code
+.claude/
+
+# Documentation (local only)
+docs/
+
 # OS files
 .DS_Store
 Thumbs.db
