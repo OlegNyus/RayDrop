@@ -306,8 +306,12 @@ export function SetupForm({
             <label className="block text-sm font-medium text-text-primary">
               Jira Subdomain <span className="text-error">*</span>
             </label>
-            <div className="flex items-center">
-              <span className="px-3 py-2 bg-sidebar border border-r-0 border-input-border rounded-l-lg text-sm text-text-muted">
+            <div className={`flex items-center rounded-lg border overflow-hidden transition-all ${
+              errors.jiraSubdomain
+                ? 'border-error'
+                : 'border-input-border focus-within:ring-2 focus-within:ring-accent focus-within:border-accent'
+            }`}>
+              <span className="px-3 py-2 bg-sidebar text-sm text-text-muted border-r border-input-border">
                 https://
               </span>
               <input
@@ -319,11 +323,9 @@ export function SetupForm({
                 }}
                 placeholder="your-company"
                 disabled={isSubmitting}
-                className={`flex-1 px-3 py-2 bg-input-bg border-y border-input-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent ${
-                  errors.jiraSubdomain ? 'border-error' : ''
-                }`}
+                className="flex-1 px-3 py-2 bg-input-bg text-text-primary placeholder-text-muted focus:outline-none min-w-0"
               />
-              <span className="px-3 py-2 bg-sidebar border border-l-0 border-input-border rounded-r-lg text-sm text-text-muted">
+              <span className="px-3 py-2 bg-sidebar text-sm text-text-muted border-l border-input-border">
                 .atlassian.net
               </span>
             </div>
