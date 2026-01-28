@@ -1,5 +1,10 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useTheme } from '../../context/ThemeContext';
+import { ProjectSelector } from '../ui';
+import { draftsApi } from '../../services/api';
+import type { Draft } from '../../types';
 
 interface NavItemConfig {
   path: string;
@@ -22,7 +27,10 @@ const xrayNavItems: NavItemConfig[] = [
 
 export function Sidebar() {
   const { settings, activeProject, setActiveProject, isConfigured } = useApp();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [draftCounts, setDraftCounts] = useState<Record<string, number>>({});
 
   const visibleProjects = settings?.projects.filter(
     p => !settings.hiddenProjects.includes(p)
@@ -30,6 +38,23 @@ export function Sidebar() {
 
   // Check if we're on an edit page (should not highlight "Create Test Case")
   const isEditPage = location.pathname.includes('/edit');
+
+  // Fetch all drafts for counts
+  useEffect(() => {
+    const loadDraftCounts = async () => {
+      try {
+        const allDrafts = await draftsApi.list();
+        const counts: Record<string, number> = {};
+        allDrafts.forEach((d: Draft) => {
+          counts[d.projectKey] = (counts[d.projectKey] || 0) + 1;
+        });
+        setDraftCounts(counts);
+      } catch (err) {
+        console.error('Failed to load draft counts:', err);
+      }
+    };
+    loadDraftCounts();
+  }, [activeProject]); // Refresh when project changes
 
   return (
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -42,17 +67,12 @@ export function Sidebar() {
       {/* Project Selector */}
       {visibleProjects.length > 0 && (
         <div className="p-3 border-b border-sidebar-border">
-          <select
-            value={activeProject || ''}
-            onChange={e => setActiveProject(e.target.value)}
-            className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
-          >
-            {visibleProjects.map(project => (
-              <option key={project} value={project}>
-                {project}
-              </option>
-            ))}
-          </select>
+          <ProjectSelector
+            projects={visibleProjects}
+            activeProject={activeProject}
+            onSelect={setActiveProject}
+            draftCounts={draftCounts}
+          />
         </div>
       )}
 
@@ -78,19 +98,54 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* Footer */}
-      <div className="p-3 border-t border-sidebar-border space-y-1">
-        <SidebarLink
-          item={{ path: '/settings', label: 'Settings', icon: '⚙️' }}
-        />
-        <div className="flex items-center gap-2 px-3 py-2">
-          <span
-            className={`w-2 h-2 rounded-full ${isConfigured ? 'bg-success' : 'bg-warning'}`}
-            title={isConfigured ? 'Connected' : 'Not configured'}
-          />
-          <span className="text-xs text-text-muted">
-            {isConfigured ? 'Connected' : 'Not configured'}
-          </span>
+      {/* Footer - Compact icon row */}
+      <div className="p-3 border-t border-sidebar-border">
+        <div className="flex items-center justify-between">
+          {/* Settings */}
+          <button
+            onClick={() => navigate('/settings')}
+            className={`p-2 rounded-lg transition-colors ${
+              location.pathname === '/settings'
+                ? 'bg-accent text-white'
+                : 'text-text-secondary hover:bg-sidebar-hover hover:text-text-primary'
+            }`}
+            title="Settings"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+
+          {/* Connection Status */}
+          <div
+            className="p-2 flex items-center gap-2"
+            title={isConfigured ? 'Connected to Xray' : 'Not configured'}
+          >
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${isConfigured ? 'bg-success' : 'bg-warning'}`}
+            />
+            <span className="text-xs text-text-muted">
+              {isConfigured ? 'Connected' : 'Offline'}
+            </span>
+          </div>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-lg text-text-secondary hover:bg-sidebar-hover hover:text-text-primary transition-colors"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
     </aside>

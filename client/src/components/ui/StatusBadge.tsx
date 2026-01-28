@@ -10,7 +10,7 @@ export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
     new: { label: 'New', bg: 'bg-blue-500', text: 'text-white' },
     draft: { label: 'Draft', bg: 'bg-amber-500', text: 'text-white' },
     ready: { label: 'Ready', bg: 'bg-green-500', text: 'text-white' },
-    imported: { label: 'Imported', bg: 'bg-purple-500', text: 'text-white' },
+    imported: { label: 'Imported', bg: 'bg-emerald-600', text: 'text-white' },
   };
 
   const { label, bg, text } = config[status] || { label: status, bg: 'bg-gray-500', text: 'text-white' };

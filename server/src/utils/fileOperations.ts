@@ -259,6 +259,30 @@ export function setActiveProject(projectKey: string): { success: boolean; error?
   return { success: true };
 }
 
+export function removeProject(projectKey: string): { success: boolean } {
+  const settings = readSettings();
+
+  // Remove from projects list
+  settings.projects = settings.projects.filter(p => p !== projectKey);
+
+  // Remove from hidden projects
+  settings.hiddenProjects = settings.hiddenProjects.filter(p => p !== projectKey);
+
+  // Remove project settings
+  delete settings.projectSettings[projectKey];
+
+  // Update active project if needed
+  if (settings.activeProject === projectKey) {
+    const visibleProjects = settings.projects.filter(
+      p => !settings.hiddenProjects.includes(p)
+    );
+    settings.activeProject = visibleProjects[0] || null;
+  }
+
+  writeSettings(settings);
+  return { success: true };
+}
+
 // ============ Draft Functions ============
 
 export function getDraftPath(projectKey: string, area: string, title: string, id: string): string {

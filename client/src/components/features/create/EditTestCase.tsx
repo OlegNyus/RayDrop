@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
-import { Button, Card, StatusBadge } from '../../ui';
+import { Button, Card, StatusBadge, ConfirmModal } from '../../ui';
 import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
 import type { Draft, TestStep, ProjectSettings } from '../../../types';
 import {
@@ -16,6 +16,7 @@ import {
   createEmptyStep,
   useStepSensors,
 } from './TestCaseFormComponents';
+import { ImportedTestCaseView } from './ImportedTestCaseView';
 
 export function EditTestCase() {
   const { id } = useParams<{ id: string }>();
@@ -24,7 +25,7 @@ export function EditTestCase() {
   const sensors = useStepSensors();
 
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [originalDraft, setOriginalDraft] = useState<Draft | null>(null);
+  const [_originalDraft, setOriginalDraft] = useState<Draft | null>(null);
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -39,6 +40,10 @@ export function EditTestCase() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showXrayValidation, setShowXrayValidation] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importSuccess, setImportSuccess] = useState<{ testKey: string } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Load draft directly from API by ID
   useEffect(() => {
@@ -213,8 +218,8 @@ export function EditTestCase() {
   };
 
   const handleSaveDraft = async () => {
-    if (!draft || !validateStep1()) { setCurrentStep(1); return; }
-
+    if (!draft) return;
+    // Draft can be saved with partial data - no validation required
     setSaving(true);
     try {
       const savedDraft = await draftsApi.update(draft.id, { ...draft, status: 'draft', projectKey: activeProject || '' });
@@ -250,9 +255,108 @@ export function EditTestCase() {
     }
   };
 
+  const handleImportToXray = async () => {
+    if (!draft || !activeProject) return;
+    if (!validateStep1()) { setCurrentStep(1); return; }
+    if (!validateStep2()) { setCurrentStep(2); return; }
+    setShowXrayValidation(true);
+    if (!isStep3Valid()) { setCurrentStep(3); return; }
+
+    setImporting(true);
+    setErrors({});
+    setImportSuccess(null);
+
+    try {
+      // First save the draft as ready
+      await draftsApi.update(draft.id, {
+        ...draft,
+        status: 'ready',
+        isComplete: true,
+        projectKey: activeProject,
+      });
+
+      // Import to Xray
+      const importResult = await xrayApi.import([draft.id], activeProject);
+
+      if (!importResult.success || !importResult.testIssueIds || !importResult.testKeys) {
+        throw new Error(importResult.error || 'Import failed');
+      }
+
+      const testIssueId = importResult.testIssueIds[0];
+      const testKey = importResult.testKeys[0];
+
+      // Link to test plans
+      for (const testPlanId of draft.xrayLinking.testPlanIds) {
+        await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
+      }
+
+      // Link to test executions
+      for (const testExecutionId of draft.xrayLinking.testExecutionIds) {
+        await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
+      }
+
+      // Link to test sets
+      for (const testSetId of draft.xrayLinking.testSetIds) {
+        await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
+      }
+
+      // Add to folder
+      if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
+        await xrayApi.addTestsToFolder(
+          draft.xrayLinking.projectId,
+          draft.xrayLinking.folderPath,
+          [testIssueId]
+        );
+      }
+
+      // Link preconditions
+      if (draft.xrayLinking.preconditionIds.length > 0) {
+        await xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds);
+      }
+
+      // Update local state with imported info
+      setDraft({
+        ...draft,
+        status: 'imported',
+        testKey,
+        testIssueId,
+      });
+      setOriginalDraft({
+        ...draft,
+        status: 'imported',
+        testKey,
+        testIssueId,
+      });
+      setHasChanges(false);
+      setImportSuccess({ testKey });
+
+      await refreshDrafts();
+    } catch (err) {
+      console.error('Failed to import to Xray:', err);
+      setErrors({ import: err instanceof Error ? err.message : 'Failed to import to Xray' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleBack = () => {
     if (hasChanges && !confirm('You have unsaved changes. Discard and go back?')) return;
     navigate('/test-cases');
+  };
+
+  const handleDelete = async () => {
+    if (!draft) return;
+    setDeleting(true);
+    try {
+      await draftsApi.delete(draft.id);
+      await refreshDrafts();
+      navigate('/test-cases');
+    } catch (err) {
+      console.error('Failed to delete:', err);
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+    }
   };
 
   if (loading) {
@@ -290,6 +394,11 @@ export function EditTestCase() {
     );
   }
 
+  // Show read-only view for imported test cases
+  if (draft.status === 'imported') {
+    return <ImportedTestCaseView draft={draft} />;
+  }
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between">
@@ -298,6 +407,15 @@ export function EditTestCase() {
           <StatusBadge status={draft.status} />
           {hasChanges && <span className="text-sm text-warning">• Unsaved</span>}
         </div>
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          className="p-2 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+          title="Delete test case"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
 
       <StepIndicator
@@ -311,6 +429,17 @@ export function EditTestCase() {
 
       {errors.save && (
         <div className="p-3 bg-red-100 dark:bg-red-900/30 text-error rounded-lg text-sm">{errors.save}</div>
+      )}
+
+      {errors.import && (
+        <div className="p-3 bg-red-100 dark:bg-red-900/30 text-error rounded-lg text-sm">{errors.import}</div>
+      )}
+
+      {importSuccess && (
+        <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm flex items-center gap-2">
+          <span className="text-green-500">✓</span>
+          Successfully imported as <strong>{importSuccess.testKey}</strong>
+        </div>
       )}
 
       {currentStep === 1 && (
@@ -346,29 +475,47 @@ export function EditTestCase() {
 
       <div className="flex justify-between pt-4 border-t border-border">
         {currentStep > 1 ? (
-          <Button variant="ghost" onClick={prevStep}>← Previous</Button>
+          <Button variant="ghost" onClick={prevStep} disabled={importing}>← Previous</Button>
         ) : (
-          <Button variant="ghost" onClick={handleBack}>← Back</Button>
+          <Button variant="ghost" onClick={handleBack} disabled={importing}>← Back</Button>
         )}
         <div className="flex gap-2">
           {draft.status !== 'ready' && (
-            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || !hasChanges}>
+            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || importing || !hasChanges}>
               Update Draft
             </Button>
           )}
           {currentStep < 3 ? (
-            <Button onClick={nextStep}>Next →</Button>
-          ) : draft.status === 'ready' ? (
-            <Button onClick={handleSaveReady} disabled={saving || !hasChanges}>
-              {saving ? 'Saving...' : 'Save Changes'}
-            </Button>
+            <Button onClick={nextStep} disabled={importing}>Next →</Button>
           ) : (
-            <Button onClick={handleSaveReady} disabled={saving}>
-              {saving ? 'Saving...' : 'Save & Mark Ready'}
-            </Button>
+            <>
+              {draft.status === 'ready' ? (
+                <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing || !hasChanges}>
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing}>
+                  {saving ? 'Saving...' : 'Save & Mark Ready'}
+                </Button>
+              )}
+              <Button onClick={handleImportToXray} disabled={saving || importing}>
+                {importing ? 'Importing...' : 'Import to Xray'}
+              </Button>
+            </>
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title="Delete Test Case"
+        message={`Are you sure you want to delete "${draft.summary || 'Untitled'}"?`}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </div>
   );
 }

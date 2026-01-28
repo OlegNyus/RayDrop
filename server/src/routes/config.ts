@@ -147,6 +147,45 @@ router.post('/test-connection', async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /api/config/test:
+ *   get:
+ *     summary: Test connection with stored credentials
+ *     tags: [Config]
+ *     responses:
+ *       200:
+ *         description: Connection successful
+ *       401:
+ *         description: Invalid credentials or not configured
+ */
+router.get('/test', async (_req: Request, res: Response) => {
+  try {
+    if (!configExists()) {
+      return res.status(401).json({ error: 'Not configured' });
+    }
+
+    const config = readConfig();
+    if (!config || !config.xrayClientId || !config.xrayClientSecret) {
+      return res.status(401).json({ error: 'Not configured' });
+    }
+
+    const validation = await validateCredentials({
+      xrayClientId: config.xrayClientId,
+      xrayClientSecret: config.xrayClientSecret,
+    });
+
+    if (!validation.success) {
+      return res.status(401).json({ error: validation.error || 'Connection failed' });
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error testing connection:', error);
+    return res.status(500).json({ error: 'Failed to test connection' });
+  }
+});
+
+/**
+ * @swagger
  * /api/config:
  *   post:
  *     summary: Save configuration
