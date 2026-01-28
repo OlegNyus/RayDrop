@@ -4,9 +4,10 @@ interface CardProps {
   children: ReactNode;
   className?: string;
   padding?: 'none' | 'sm' | 'md' | 'lg';
+  onClick?: () => void;
 }
 
-export function Card({ children, className = '', padding = 'md' }: CardProps) {
+export function Card({ children, className = '', padding = 'md', onClick }: CardProps) {
   const paddings = {
     none: '',
     sm: 'p-3',
@@ -15,7 +16,10 @@ export function Card({ children, className = '', padding = 'md' }: CardProps) {
   };
 
   return (
-    <div className={`bg-card border border-border rounded-lg ${paddings[padding]} ${className}`}>
+    <div 
+      className={`bg-card border border-border rounded-lg ${paddings[padding]} ${className}`}
+      onClick={onClick}
+    >
       {children}
     </div>
   );

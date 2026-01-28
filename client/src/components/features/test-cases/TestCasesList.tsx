@@ -1,13 +1,15 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
-import { Card, Button, Badge, Input } from '../../ui';
+import { Card, Button, StatusBadge, Input } from '../../ui';
 import type { Draft, TestCaseStatus } from '../../../types';
 
 type SortField = 'updatedAt' | 'summary' | 'status';
 type SortOrder = 'asc' | 'desc';
 
 export function TestCasesList() {
-  const { drafts, setActiveNav } = useApp();
+  const navigate = useNavigate();
+  const { drafts } = useApp();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TestCaseStatus | 'all'>('all');
   const [sortField, setSortField] = useState<SortField>('updatedAt');
@@ -16,34 +18,24 @@ export function TestCasesList() {
   const filteredDrafts = useMemo(() => {
     let result = [...drafts];
 
-    // Filter by search
     if (search) {
       const lower = search.toLowerCase();
-      result = result.filter(
-        d =>
-          d.summary.toLowerCase().includes(lower) ||
-          d.description.toLowerCase().includes(lower)
+      result = result.filter(d =>
+        d.summary.toLowerCase().includes(lower) ||
+        d.description.toLowerCase().includes(lower)
       );
     }
 
-    // Filter by status
     if (statusFilter !== 'all') {
       result = result.filter(d => d.status === statusFilter);
     }
 
-    // Sort
     result.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
-        case 'updatedAt':
-          cmp = a.updatedAt - b.updatedAt;
-          break;
-        case 'summary':
-          cmp = a.summary.localeCompare(b.summary);
-          break;
-        case 'status':
-          cmp = a.status.localeCompare(b.status);
-          break;
+        case 'updatedAt': cmp = a.updatedAt - b.updatedAt; break;
+        case 'summary': cmp = a.summary.localeCompare(b.summary); break;
+        case 'status': cmp = a.status.localeCompare(b.status); break;
       }
       return sortOrder === 'desc' ? -cmp : cmp;
     });
@@ -65,7 +57,7 @@ export function TestCasesList() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-primary">Test Cases</h1>
-        <Button onClick={() => setActiveNav('create')}>+ New Test Case</Button>
+        <Button onClick={() => navigate('/test-cases/new')}>+ New Test Case</Button>
       </div>
 
       {/* Filters */}
@@ -119,7 +111,7 @@ export function TestCasesList() {
       ) : (
         <div className="space-y-2">
           {filteredDrafts.map(draft => (
-            <TestCaseRow key={draft.id} draft={draft} />
+            <TestCaseRow key={draft.id} draft={draft} onClick={() => navigate(`/test-cases/${draft.id}/edit`)} />
           ))}
         </div>
       )}
@@ -132,16 +124,9 @@ export function TestCasesList() {
   );
 }
 
-function TestCaseRow({ draft }: { draft: Draft }) {
-  const statusVariants: Record<TestCaseStatus, 'default' | 'success' | 'warning' | 'info'> = {
-    new: 'info',
-    draft: 'warning',
-    ready: 'success',
-    imported: 'success',
-  };
-
+function TestCaseRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   return (
-    <Card padding="sm" className="hover:border-accent transition-colors cursor-pointer">
+    <Card padding="sm" className="hover:border-accent transition-colors cursor-pointer" onClick={onClick}>
       <div className="flex items-center gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -157,9 +142,7 @@ function TestCaseRow({ draft }: { draft: Draft }) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={statusVariants[draft.status]}>
-            {draft.status.charAt(0).toUpperCase() + draft.status.slice(1)}
-          </Badge>
+          <StatusBadge status={draft.status} />
           <span className="text-xs text-text-muted whitespace-nowrap">
             {new Date(draft.updatedAt).toLocaleDateString()}
           </span>

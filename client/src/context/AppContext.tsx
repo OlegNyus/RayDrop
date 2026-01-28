@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import type { Settings, Draft, Config, NavItem } from '../types';
+import type { Settings, Draft, Config } from '../types';
 import { settingsApi, draftsApi, configApi } from '../services/api';
 
 interface AppContextType {
@@ -21,10 +21,6 @@ interface AppContextType {
   drafts: Draft[];
   refreshDrafts: () => Promise<void>;
 
-  // Navigation
-  activeNav: NavItem;
-  setActiveNav: (nav: NavItem) => void;
-
   // Loading
   isLoading: boolean;
 }
@@ -35,7 +31,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<Config | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [activeNav, setActiveNav] = useState<NavItem>('dashboard');
   const [isLoading, setIsLoading] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
 
@@ -109,8 +104,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshSettings,
     drafts,
     refreshDrafts,
-    activeNav,
-    setActiveNav,
     isLoading,
   };
 

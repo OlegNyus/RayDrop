@@ -94,5 +94,3 @@ export interface ImportResult {
   error?: string;
 }
 
-// UI Types
-export type NavItem = 'dashboard' | 'test-cases' | 'create' | 'test-sets' | 'test-plans' | 'test-executions' | 'preconditions' | 'settings';

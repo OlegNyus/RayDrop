@@ -79,6 +79,50 @@ export const draftsApi = {
   deleteAll: () => request<{ success: boolean }>('/drafts', { method: 'DELETE' }),
 };
 
+// Functional Areas API
+export const functionalAreasApi = {
+  get: () => request<{ success: boolean; areas: string[] }>('/settings/functional-areas'),
+  save: (areas: string[]) => request<{ success: boolean }>('/settings/functional-areas', {
+    method: 'PUT',
+    body: JSON.stringify({ areas }),
+  }),
+};
+
+// Helper functions for backward compatibility
+export async function fetchFunctionalAreas(): Promise<{ success: boolean; areas: string[] }> {
+  try {
+    return await functionalAreasApi.get();
+  } catch {
+    return { success: false, areas: [] };
+  }
+}
+
+export async function saveFunctionalAreas(areas: string[]): Promise<{ success: boolean }> {
+  return functionalAreasApi.save(areas);
+}
+
+// Labels API
+export const labelsApi = {
+  get: () => request<{ success: boolean; labels: string[] }>('/settings/labels'),
+  save: (labels: string[]) => request<{ success: boolean }>('/settings/labels', {
+    method: 'PUT',
+    body: JSON.stringify({ labels }),
+  }),
+};
+
+// Helper functions for backward compatibility
+export async function fetchLabels(): Promise<{ success: boolean; labels: string[] }> {
+  try {
+    return await labelsApi.get();
+  } catch {
+    return { success: false, labels: [] };
+  }
+}
+
+export async function saveLabels(labels: string[]): Promise<{ success: boolean }> {
+  return labelsApi.save(labels);
+}
+
 // Xray API
 export const xrayApi = {
   import: (draftIds: string[], projectKey?: string) => request<ImportResult>('/xray/import', {

@@ -1,9 +1,11 @@
 export { Button } from './Button';
 export { Input } from './Input';
 export { Badge } from './Badge';
+export { StatusBadge } from './StatusBadge';
 export { Spinner } from './Spinner';
 export { Card } from './Card';
 export { SearchableMultiSelect } from './SearchableMultiSelect';
 export { SummaryInput } from './SummaryInput';
+export { LabelInput } from './LabelInput';
 export { FolderInput } from './FolderInput';
 export { SortableStepCard } from './SortableStepCard';

@@ -1,7 +1,9 @@
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
-import { Card, Badge } from '../../ui';
+import { Card, StatusBadge } from '../../ui';
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const { drafts, activeProject, settings } = useApp();
 
   const stats = {
@@ -9,7 +11,6 @@ export function Dashboard() {
     new: drafts.filter(d => d.status === 'new').length,
     draft: drafts.filter(d => d.status === 'draft').length,
     ready: drafts.filter(d => d.status === 'ready').length,
-    imported: drafts.filter(d => d.status === 'imported').length,
   };
 
   const recentDrafts = drafts.slice(0, 5);
@@ -26,10 +27,7 @@ export function Dashboard() {
           {activeProject && (
             <div className="flex items-center gap-2 mt-1">
               {projectColor && (
-                <span
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: projectColor }}
-                />
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: projectColor }} />
               )}
               <span className="text-text-secondary">{activeProject}</span>
             </div>
@@ -41,8 +39,8 @@ export function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total Test Cases" value={stats.total} />
         <StatCard label="New" value={stats.new} />
-        <StatCard label="In Progress" value={stats.draft} />
-        <StatCard label="Ready to Import" value={stats.ready} />
+        <StatCard label="Draft" value={stats.draft} />
+        <StatCard label="Ready" value={stats.ready} />
       </div>
 
       {/* Recent Drafts */}
@@ -57,7 +55,8 @@ export function Dashboard() {
             {recentDrafts.map(draft => (
               <div
                 key={draft.id}
-                className="flex items-center justify-between p-3 bg-background rounded-lg"
+                onClick={() => navigate(`/test-cases/${draft.id}/edit`)}
+                className="flex items-center justify-between p-3 bg-background rounded-lg hover:bg-sidebar-hover cursor-pointer transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-text-primary truncate">
@@ -77,35 +76,11 @@ export function Dashboard() {
   );
 }
 
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
+function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <Card className="text-center">
       <p className="text-3xl font-bold text-text-primary">{value}</p>
       <p className="text-sm text-text-secondary mt-1">{label}</p>
     </Card>
   );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, 'default' | 'success' | 'warning' | 'info'> = {
-    new: 'info',
-    draft: 'warning',
-    ready: 'success',
-    imported: 'success',
-  };
-
-  const labels: Record<string, string> = {
-    new: 'New',
-    draft: 'Draft',
-    ready: 'Ready',
-    imported: 'Imported',
-  };
-
-  return <Badge variant={variants[status] || 'default'}>{labels[status] || status}</Badge>;
 }

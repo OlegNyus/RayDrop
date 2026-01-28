@@ -1,25 +1,35 @@
+import { NavLink, useLocation } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import type { NavItem } from '../../types';
 
-const mainNavItems: { id: NavItem; label: string; icon: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  { id: 'test-cases', label: 'Test Cases', icon: '📋' },
-  { id: 'create', label: 'Create Test Case', icon: '➕' },
+interface NavItemConfig {
+  path: string;
+  label: string;
+  icon: string;
+}
+
+const mainNavItems: NavItemConfig[] = [
+  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { path: '/test-cases', label: 'Test Cases', icon: '📋' },
+  { path: '/test-cases/new', label: 'Create Test Case', icon: '➕' },
 ];
 
-const xrayNavItems: { id: NavItem; label: string; icon: string }[] = [
-  { id: 'test-sets', label: 'Test Sets', icon: '📁' },
-  { id: 'test-plans', label: 'Test Plans', icon: '📅' },
-  { id: 'test-executions', label: 'Test Executions', icon: '▶️' },
-  { id: 'preconditions', label: 'Preconditions', icon: '⚡' },
+const xrayNavItems: NavItemConfig[] = [
+  { path: '/test-sets', label: 'Test Sets', icon: '📁' },
+  { path: '/test-plans', label: 'Test Plans', icon: '📅' },
+  { path: '/test-executions', label: 'Test Executions', icon: '▶️' },
+  { path: '/preconditions', label: 'Preconditions', icon: '⚡' },
 ];
 
 export function Sidebar() {
-  const { activeNav, setActiveNav, settings, activeProject, setActiveProject, isConfigured } = useApp();
+  const { settings, activeProject, setActiveProject, isConfigured } = useApp();
+  const location = useLocation();
 
   const visibleProjects = settings?.projects.filter(
     p => !settings.hiddenProjects.includes(p)
   ) || [];
+
+  // Check if we're on an edit page (should not highlight "Create Test Case")
+  const isEditPage = location.pathname.includes('/edit');
 
   return (
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -50,11 +60,10 @@ export function Sidebar() {
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         <div className="mb-4">
           {mainNavItems.map(item => (
-            <NavButton
-              key={item.id}
+            <SidebarLink
+              key={item.path}
               item={item}
-              isActive={activeNav === item.id}
-              onClick={() => setActiveNav(item.id)}
+              isEditPage={isEditPage}
             />
           ))}
         </div>
@@ -64,22 +73,15 @@ export function Sidebar() {
             Xray Entities
           </p>
           {xrayNavItems.map(item => (
-            <NavButton
-              key={item.id}
-              item={item}
-              isActive={activeNav === item.id}
-              onClick={() => setActiveNav(item.id)}
-            />
+            <SidebarLink key={item.path} item={item} />
           ))}
         </div>
       </nav>
 
       {/* Footer */}
       <div className="p-3 border-t border-sidebar-border space-y-1">
-        <NavButton
-          item={{ id: 'settings', label: 'Settings', icon: '⚙️' }}
-          isActive={activeNav === 'settings'}
-          onClick={() => setActiveNav('settings')}
+        <SidebarLink
+          item={{ path: '/settings', label: 'Settings', icon: '⚙️' }}
         />
         <div className="flex items-center gap-2 px-3 py-2">
           <span
@@ -91,23 +93,32 @@ export function Sidebar() {
           </span>
         </div>
       </div>
-
     </aside>
   );
 }
 
-function NavButton({
+function SidebarLink({
   item,
-  isActive,
-  onClick,
+  isEditPage = false,
 }: {
-  item: { id: string; label: string; icon: string };
-  isActive: boolean;
-  onClick: () => void;
+  item: NavItemConfig;
+  isEditPage?: boolean;
 }) {
+  const location = useLocation();
+  
+  // Special handling for "Create Test Case" - don't highlight when on edit page
+  const isCreateLink = item.path === '/test-cases/new';
+  
+  // Custom active check
+  const isActive = isCreateLink
+    ? location.pathname === item.path && !isEditPage
+    : location.pathname === item.path || 
+      (item.path === '/test-cases' && location.pathname.startsWith('/test-cases') && 
+       !location.pathname.includes('/new') && !location.pathname.includes('/edit'));
+
   return (
-    <button
-      onClick={onClick}
+    <NavLink
+      to={item.path}
       className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
         isActive
           ? 'bg-accent text-white'
@@ -116,6 +127,6 @@ function NavButton({
     >
       <span>{item.icon}</span>
       <span>{item.label}</span>
-    </button>
+    </NavLink>
   );
 }
