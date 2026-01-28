@@ -14,6 +14,14 @@ import type { Settings, ProjectSettings } from '../types.js';
 
 const router = Router();
 
+// Project key validation: must start with uppercase letter, followed by uppercase letters, numbers, or underscores
+// Max 10 characters (Jira standard)
+const PROJECT_KEY_REGEX = /^[A-Z][A-Z0-9_]{0,9}$/;
+
+function isValidProjectKey(key: string): boolean {
+  return typeof key === 'string' && PROJECT_KEY_REGEX.test(key);
+}
+
 /**
  * @swagger
  * /api/settings:
@@ -95,6 +103,12 @@ router.post('/projects', (req: Request, res: Response) => {
 
     if (!projectKey) {
       return res.status(400).json({ error: 'Project key is required' });
+    }
+
+    if (!isValidProjectKey(projectKey)) {
+      return res.status(400).json({
+        error: 'Invalid project key format. Must start with uppercase letter, contain only uppercase letters, numbers, or underscores, and be 1-10 characters.'
+      });
     }
 
     const result = addProject(projectKey, color);
