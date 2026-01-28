@@ -2,10 +2,10 @@
 
 /* Custom theme colors */
 @theme {
-  --color-sidebar: #f5f0eb;
+  --color-sidebar: #f5f4ee;
   --color-sidebar-hover: #ebe5df;
   --color-sidebar-border: #e0d9d1;
-  --color-background: #faf8f5;
+  --color-background: #faf9f5;
   --color-card: #ffffff;
   --color-text-primary: #2d2d2d;
   --color-text-secondary: #6b6b6b;
@@ -25,10 +25,10 @@
 
 /* Dark mode colors */
 .dark {
-  --color-sidebar: #1a1a1a;
+  --color-sidebar: #1f1e1d;
   --color-sidebar-hover: #232323;
   --color-sidebar-border: #464646;
-  --color-background: #232323;
+  --color-background: #262624;
   --color-card: #1a1a1a;
   --color-text-primary: #cecac6;
   --color-text-secondary: #9a9590;

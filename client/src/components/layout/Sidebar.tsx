@@ -1,6 +1,10 @@
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ProjectSelector } from '../ui';
+import { draftsApi } from '../../services/api';
+import type { Draft } from '../../types';
 
 interface NavItemConfig {
   path: string;
@@ -26,6 +30,7 @@ export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
+  const [draftCounts, setDraftCounts] = useState<Record<string, number>>({});
 
   const visibleProjects = settings?.projects.filter(
     p => !settings.hiddenProjects.includes(p)
@@ -33,6 +38,23 @@ export function Sidebar() {
 
   // Check if we're on an edit page (should not highlight "Create Test Case")
   const isEditPage = location.pathname.includes('/edit');
+
+  // Fetch all drafts for counts
+  useEffect(() => {
+    const loadDraftCounts = async () => {
+      try {
+        const allDrafts = await draftsApi.list();
+        const counts: Record<string, number> = {};
+        allDrafts.forEach((d: Draft) => {
+          counts[d.projectKey] = (counts[d.projectKey] || 0) + 1;
+        });
+        setDraftCounts(counts);
+      } catch (err) {
+        console.error('Failed to load draft counts:', err);
+      }
+    };
+    loadDraftCounts();
+  }, [activeProject]); // Refresh when project changes
 
   return (
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -45,17 +67,12 @@ export function Sidebar() {
       {/* Project Selector */}
       {visibleProjects.length > 0 && (
         <div className="p-3 border-b border-sidebar-border">
-          <select
-            value={activeProject || ''}
-            onChange={e => setActiveProject(e.target.value)}
-            className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
-          >
-            {visibleProjects.map(project => (
-              <option key={project} value={project}>
-                {project}
-              </option>
-            ))}
-          </select>
+          <ProjectSelector
+            projects={visibleProjects}
+            activeProject={activeProject}
+            onSelect={setActiveProject}
+            draftCounts={draftCounts}
+          />
         </div>
       )}
 

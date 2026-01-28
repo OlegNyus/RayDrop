@@ -27,6 +27,7 @@ export const configApi = {
     body: JSON.stringify(config),
   }),
   delete: () => request<{ success: boolean }>('/config', { method: 'DELETE' }),
+  test: () => request<{ success: boolean }>('/config/test'),
   testConnection: (credentials: { xrayClientId: string; xrayClientSecret: string }) =>
     request<{ success: boolean }>('/config/test-connection', {
       method: 'POST',
@@ -50,6 +51,9 @@ export const settingsApi = {
   }),
   unhideProject: (projectKey: string) => request<{ success: boolean }>(`/settings/projects/${projectKey}/unhide`, {
     method: 'POST',
+  }),
+  removeProject: (projectKey: string) => request<{ success: boolean }>(`/settings/projects/${projectKey}`, {
+    method: 'DELETE',
   }),
   setActiveProject: (projectKey: string) => request<{ success: boolean }>('/settings/active-project', {
     method: 'POST',

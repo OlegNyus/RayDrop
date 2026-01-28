@@ -10,3 +10,5 @@ export { LabelInput } from './LabelInput';
 export { FolderInput } from './FolderInput';
 export { SortableStepCard } from './SortableStepCard';
 export { TestKeyLink } from './TestKeyLink';
+export { ConfirmModal } from './ConfirmModal';
+export { ProjectSelector } from './ProjectSelector';

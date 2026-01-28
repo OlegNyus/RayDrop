@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, StatusBadge, TestKeyLink } from '../../ui';
+import { Card, Button, StatusBadge, TestKeyLink, ConfirmModal } from '../../ui';
 import { useApp } from '../../../context/AppContext';
+import { draftsApi } from '../../../services/api';
 import type { Draft } from '../../../types';
 
 // Extract issue key from display text (e.g., "WCP-7067: Sprint 115 | Smoke" -> "WCP-7067")
@@ -39,8 +41,24 @@ interface ImportedTestCaseViewProps {
 
 export function ImportedTestCaseView({ draft }: ImportedTestCaseViewProps) {
   const navigate = useNavigate();
-  const { config } = useApp();
+  const { config, refreshDrafts } = useApp();
   const jiraBaseUrl = config?.jiraBaseUrl;
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await draftsApi.delete(draft.id);
+      await refreshDrafts();
+      navigate('/test-cases');
+    } catch (err) {
+      console.error('Failed to delete:', err);
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
@@ -51,9 +69,20 @@ export function ImportedTestCaseView({ draft }: ImportedTestCaseViewProps) {
           <StatusBadge status={draft.status} />
           {draft.testKey && <TestKeyLink testKey={draft.testKey} />}
         </div>
-        <Button variant="ghost" onClick={() => navigate('/test-cases')}>
-          ← Back to Test Cases
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="p-2 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+            title="Delete test case"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+          <Button variant="ghost" onClick={() => navigate('/test-cases')}>
+            ← Back to Test Cases
+          </Button>
+        </div>
       </div>
 
       {/* Basic Information */}
@@ -209,6 +238,22 @@ export function ImportedTestCaseView({ draft }: ImportedTestCaseViewProps) {
           )}
         </div>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title="Delete Test Case"
+        message={`Are you sure you want to delete "${draft.summary || 'Untitled'}"?`}
+        warning={
+          draft.testKey
+            ? `This will only remove it from RayDrop. The test case (${draft.testKey}) still exists in Xray.`
+            : undefined
+        }
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </div>
   );
 }

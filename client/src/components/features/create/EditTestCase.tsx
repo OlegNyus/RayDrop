@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
-import { Button, Card, StatusBadge } from '../../ui';
+import { Button, Card, StatusBadge, ConfirmModal } from '../../ui';
 import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
 import type { Draft, TestStep, ProjectSettings } from '../../../types';
 import {
@@ -42,6 +42,8 @@ export function EditTestCase() {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importSuccess, setImportSuccess] = useState<{ testKey: string } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Load draft directly from API by ID
   useEffect(() => {
@@ -342,6 +344,21 @@ export function EditTestCase() {
     navigate('/test-cases');
   };
 
+  const handleDelete = async () => {
+    if (!draft) return;
+    setDeleting(true);
+    try {
+      await draftsApi.delete(draft.id);
+      await refreshDrafts();
+      navigate('/test-cases');
+    } catch (err) {
+      console.error('Failed to delete:', err);
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -390,6 +407,15 @@ export function EditTestCase() {
           <StatusBadge status={draft.status} />
           {hasChanges && <span className="text-sm text-warning">• Unsaved</span>}
         </div>
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          className="p-2 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+          title="Delete test case"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
 
       <StepIndicator
@@ -479,6 +505,17 @@ export function EditTestCase() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title="Delete Test Case"
+        message={`Are you sure you want to delete "${draft.summary || 'Untitled'}"?`}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </div>
   );
 }

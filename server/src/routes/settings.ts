@@ -3,6 +3,7 @@ import {
   getSettingsSynced,
   writeSettings,
   addProject,
+  removeProject,
   hideProject,
   unhideProject,
   setActiveProject,
@@ -263,6 +264,33 @@ router.put('/projects/:projectKey', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error updating project settings:', error);
     return res.status(500).json({ error: 'Failed to update project settings' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/settings/projects/{projectKey}:
+ *   delete:
+ *     summary: Remove a project
+ *     tags: [Settings]
+ *     parameters:
+ *       - in: path
+ *         name: projectKey
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Project removed
+ */
+router.delete('/projects/:projectKey', (req: Request, res: Response) => {
+  try {
+    const { projectKey } = req.params;
+    const result = removeProject(projectKey);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error removing project:', error);
+    return res.status(500).json({ error: 'Failed to remove project' });
   }
 });
 
