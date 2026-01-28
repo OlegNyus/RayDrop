@@ -123,6 +123,14 @@ export async function saveLabels(labels: string[]): Promise<{ success: boolean }
   return labelsApi.save(labels);
 }
 
+// Folder type from Xray
+interface FolderNode {
+  name: string;
+  path: string;
+  testsCount: number;
+  folders: string[];
+}
+
 // Xray API
 export const xrayApi = {
   import: (draftIds: string[], projectKey?: string) => request<ImportResult>('/xray/import', {
@@ -133,4 +141,38 @@ export const xrayApi = {
   getTestExecutions: (projectKey: string) => request<XrayEntity[]>(`/xray/test-executions/${projectKey}`),
   getTestSets: (projectKey: string) => request<XrayEntity[]>(`/xray/test-sets/${projectKey}`),
   getPreconditions: (projectKey: string) => request<XrayEntity[]>(`/xray/preconditions/${projectKey}`),
+  getProjectId: (projectKey: string) => request<{ projectId: string }>(`/xray/project-id/${projectKey}`),
+  getFolders: (projectId: string, path = '/') => request<FolderNode>(`/xray/folders/${projectId}?path=${encodeURIComponent(path)}`),
+
+  // Helper to get all folders recursively
+  async getAllFolders(projectKey: string): Promise<{ path: string; name: string }[]> {
+    try {
+      const { projectId } = await this.getProjectId(projectKey);
+      const folders: { path: string; name: string }[] = [];
+
+      const fetchRecursive = async (path: string): Promise<void> => {
+        try {
+          const folder = await this.getFolders(projectId, path);
+
+          // Add subfolders
+          for (const subfolderName of folder.folders || []) {
+            const subPath = path === '/' ? `/${subfolderName}` : `${path}/${subfolderName}`;
+            folders.push({ path: subPath, name: subfolderName });
+            // Recursively fetch subfolders (limit depth to avoid too many requests)
+            if (folders.length < 100) {
+              await fetchRecursive(subPath);
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to fetch folder ${path}:`, err);
+        }
+      };
+
+      await fetchRecursive('/');
+      return folders;
+    } catch (err) {
+      console.error('Failed to fetch folders:', err);
+      return [];
+    }
+  },
 };

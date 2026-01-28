@@ -58,15 +58,16 @@ export function CreateTestCase() {
     if (!activeProject) return;
     setLoadingXray(true);
     try {
-      const [testPlans, testExecutions, testSets, preconditions] = await Promise.all([
+      const [testPlans, testExecutions, testSets, preconditions, folders] = await Promise.all([
         xrayApi.getTestPlans(activeProject).catch(() => []),
         xrayApi.getTestExecutions(activeProject).catch(() => []),
         xrayApi.getTestSets(activeProject).catch(() => []),
         xrayApi.getPreconditions(activeProject).catch(() => []),
+        xrayApi.getAllFolders(activeProject).catch(() => []),
       ]);
       setXrayCache({
         testPlans, testExecutions, testSets, preconditions,
-        folders: [{ path: '/', name: '/ (Root)' }],
+        folders: [{ path: '/', name: '/ (Root)' }, ...folders],
       });
     } catch (err) {
       console.error('Failed to load Xray entities:', err);
