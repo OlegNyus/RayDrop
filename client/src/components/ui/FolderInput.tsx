@@ -76,7 +76,7 @@ export function FolderInput({
           type="button"
           onClick={() => {
             setIsEditing(true);
-            setSearch(value);
+            setSearch('');  // Start empty to show all folders
             setTimeout(() => inputRef.current?.focus(), 0);
           }}
           className={`w-full px-3 py-2 bg-input-bg border rounded-lg text-left text-sm flex items-center gap-2 hover:border-accent transition-colors ${

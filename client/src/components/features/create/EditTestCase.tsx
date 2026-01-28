@@ -71,6 +71,13 @@ export function EditTestCase() {
     loadDraft();
   }, [id]);
 
+  // Navigate away if project changes and draft belongs to different project
+  useEffect(() => {
+    if (draft && activeProject && draft.projectKey !== activeProject) {
+      navigate('/test-cases');
+    }
+  }, [activeProject, draft, navigate]);
+
   useEffect(() => {
     if (activeProject) {
       loadProjectSettings();
@@ -344,13 +351,21 @@ export function EditTestCase() {
           <Button variant="ghost" onClick={handleBack}>← Back</Button>
         )}
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || !hasChanges}>
-            Update Draft
-          </Button>
+          {draft.status !== 'ready' && (
+            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || !hasChanges}>
+              Update Draft
+            </Button>
+          )}
           {currentStep < 3 ? (
             <Button onClick={nextStep}>Next →</Button>
+          ) : draft.status === 'ready' ? (
+            <Button onClick={handleSaveReady} disabled={saving || !hasChanges}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
           ) : (
-            <Button onClick={handleSaveReady} disabled={saving}>{saving ? 'Saving...' : 'Save & Mark Ready'}</Button>
+            <Button onClick={handleSaveReady} disabled={saving}>
+              {saving ? 'Saving...' : 'Save & Mark Ready'}
+            </Button>
           )}
         </div>
       </div>

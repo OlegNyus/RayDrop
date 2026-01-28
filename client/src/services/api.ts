@@ -123,12 +123,12 @@ export async function saveLabels(labels: string[]): Promise<{ success: boolean }
   return labelsApi.save(labels);
 }
 
-// Folder type from Xray
+// Folder type from Xray (nested structure)
 interface FolderNode {
   name: string;
   path: string;
-  testsCount: number;
-  folders: string[];
+  testsCount?: number;
+  folders: FolderNode[];
 }
 
 // Xray API
@@ -144,31 +144,24 @@ export const xrayApi = {
   getProjectId: (projectKey: string) => request<{ projectId: string }>(`/xray/project-id/${projectKey}`),
   getFolders: (projectId: string, path = '/') => request<FolderNode>(`/xray/folders/${projectId}?path=${encodeURIComponent(path)}`),
 
-  // Helper to get all folders recursively
+  // Helper to get all folders - flattens nested structure from single API call
   async getAllFolders(projectKey: string): Promise<{ path: string; name: string }[]> {
     try {
       const { projectId } = await this.getProjectId(projectKey);
+      const rootFolder = await this.getFolders(projectId, '/');
       const folders: { path: string; name: string }[] = [];
 
-      const fetchRecursive = async (path: string): Promise<void> => {
-        try {
-          const folder = await this.getFolders(projectId, path);
-
-          // Add subfolders
-          for (const subfolderName of folder.folders || []) {
-            const subPath = path === '/' ? `/${subfolderName}` : `${path}/${subfolderName}`;
-            folders.push({ path: subPath, name: subfolderName });
-            // Recursively fetch subfolders (limit depth to avoid too many requests)
-            if (folders.length < 100) {
-              await fetchRecursive(subPath);
-            }
+      // Recursively flatten the nested folder structure
+      const flatten = (folderNodes: FolderNode[]): void => {
+        for (const node of folderNodes) {
+          folders.push({ path: node.path, name: node.name });
+          if (node.folders && node.folders.length > 0) {
+            flatten(node.folders);
           }
-        } catch (err) {
-          console.error(`Failed to fetch folder ${path}:`, err);
         }
       };
 
-      await fetchRecursive('/');
+      flatten(rootFolder.folders || []);
       return folders;
     } catch (err) {
       console.error('Failed to fetch folders:', err);
