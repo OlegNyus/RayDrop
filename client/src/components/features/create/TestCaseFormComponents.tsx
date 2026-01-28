@@ -320,17 +320,6 @@ export function Step3XrayLinking({ draft, updateXrayLinking, xrayCache, loadingX
         required
         error={showValidation && !xrayLinking.folderPath.trim() ? 'Folder path is required' : undefined}
       />
-      <div className="mt-6 p-4 bg-background rounded-lg">
-        <h3 className="text-sm font-medium text-text-primary mb-2">Test Case Summary</h3>
-        <div className="text-sm text-text-secondary space-y-1">
-          <p><strong>Summary:</strong> {draft.summary || '(not set)'}</p>
-          <p><strong>Steps:</strong> {draft.steps.length}</p>
-          <p><strong>Test Plans:</strong> {xrayLinking.testPlanIds.length}</p>
-          <p><strong>Test Executions:</strong> {xrayLinking.testExecutionIds.length}</p>
-          <p><strong>Test Sets:</strong> {xrayLinking.testSetIds.length}</p>
-          <p><strong>Folder:</strong> {xrayLinking.folderPath || '(not set)'}</p>
-        </div>
-      </div>
     </Card>
   );
 }
