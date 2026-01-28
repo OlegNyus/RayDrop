@@ -266,4 +266,174 @@ router.put('/projects/:projectKey', (req: Request, res: Response) => {
   }
 });
 
+// ============ Functional Areas ============
+
+/**
+ * @swagger
+ * /api/settings/functional-areas:
+ *   get:
+ *     summary: Get functional areas for active project
+ *     tags: [Settings]
+ *     responses:
+ *       200:
+ *         description: List of functional areas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 areas:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ */
+router.get('/functional-areas', (_req: Request, res: Response) => {
+  try {
+    const settings = getSettingsSynced();
+    const activeProject = settings.activeProject;
+    
+    if (!activeProject) {
+      return res.json({ success: true, areas: [] });
+    }
+    
+    const projectSettings = getProjectSettings(activeProject);
+    return res.json({ success: true, areas: projectSettings.functionalAreas || [] });
+  } catch (error) {
+    console.error('Error reading functional areas:', error);
+    return res.status(500).json({ error: 'Failed to read functional areas' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/settings/functional-areas:
+ *   put:
+ *     summary: Update functional areas for active project
+ *     tags: [Settings]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [areas]
+ *             properties:
+ *               areas:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Functional areas updated
+ *       400:
+ *         description: No active project
+ */
+router.put('/functional-areas', (req: Request, res: Response) => {
+  try {
+    const { areas } = req.body;
+    const settings = getSettingsSynced();
+    const activeProject = settings.activeProject;
+    
+    if (!activeProject) {
+      return res.status(400).json({ error: 'No active project' });
+    }
+    
+    const projectSettings = getProjectSettings(activeProject);
+    projectSettings.functionalAreas = areas || [];
+    saveProjectSettings(activeProject, projectSettings);
+    
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating functional areas:', error);
+    return res.status(500).json({ error: 'Failed to update functional areas' });
+  }
+});
+
+// ============ Labels ============
+
+/**
+ * @swagger
+ * /api/settings/labels:
+ *   get:
+ *     summary: Get labels for active project
+ *     tags: [Settings]
+ *     responses:
+ *       200:
+ *         description: List of labels
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 labels:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ */
+router.get('/labels', (_req: Request, res: Response) => {
+  try {
+    const settings = getSettingsSynced();
+    const activeProject = settings.activeProject;
+    
+    if (!activeProject) {
+      return res.json({ success: true, labels: [] });
+    }
+    
+    const projectSettings = getProjectSettings(activeProject);
+    return res.json({ success: true, labels: projectSettings.labels || [] });
+  } catch (error) {
+    console.error('Error reading labels:', error);
+    return res.status(500).json({ error: 'Failed to read labels' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/settings/labels:
+ *   put:
+ *     summary: Update labels for active project
+ *     tags: [Settings]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [labels]
+ *             properties:
+ *               labels:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Labels updated
+ *       400:
+ *         description: No active project
+ */
+router.put('/labels', (req: Request, res: Response) => {
+  try {
+    const { labels } = req.body;
+    const settings = getSettingsSynced();
+    const activeProject = settings.activeProject;
+    
+    if (!activeProject) {
+      return res.status(400).json({ error: 'No active project' });
+    }
+    
+    const projectSettings = getProjectSettings(activeProject);
+    projectSettings.labels = labels || [];
+    saveProjectSettings(activeProject, projectSettings);
+    
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating labels:', error);
+    return res.status(500).json({ error: 'Failed to update labels' });
+  }
+});
+
 export default router;

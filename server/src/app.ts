@@ -23,7 +23,27 @@ app.use('/api/drafts', draftsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/xray', xrayRoutes);
 
-// Health check
+/**
+ * @swagger
+ * /api/health:
+ *   get:
+ *     summary: Health check endpoint
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });

@@ -20,14 +20,16 @@ import {
 export function EditTestCase() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { activeProject, refreshDrafts, drafts } = useApp();
+  const { activeProject, refreshDrafts } = useApp();
   const sensors = useStepSensors();
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [originalDraft, setOriginalDraft] = useState<Draft | null>(null);
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [projectSettings, setProjectSettings] = useState<ProjectSettings | null>(null);
   const [xrayCache, setXrayCache] = useState<XrayCache>({
@@ -38,22 +40,36 @@ export function EditTestCase() {
   const [showXrayValidation, setShowXrayValidation] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Load draft by ID
+  // Load draft directly from API by ID
   useEffect(() => {
-    if (id && drafts.length > 0) {
-      const found = drafts.find(d => d.id === id);
-      if (found) {
-        setDraft(found);
-        setNotFound(false);
-      } else {
+    const loadDraft = async () => {
+      if (!id) {
         setNotFound(true);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-    } else if (drafts.length > 0) {
-      setLoading(false);
-      setNotFound(true);
-    }
-  }, [id, drafts]);
+
+      try {
+        setLoading(true);
+        setError(null);
+        const fetchedDraft = await draftsApi.get(id);
+        setDraft(fetchedDraft);
+        setOriginalDraft(fetchedDraft);
+        setNotFound(false);
+      } catch (err) {
+        console.error('Failed to load draft:', err);
+        if (err instanceof Error && err.message.includes('not found')) {
+          setNotFound(true);
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to load test case');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDraft();
+  }, [id]);
 
   useEffect(() => {
     if (activeProject) {
@@ -193,7 +209,9 @@ export function EditTestCase() {
 
     setSaving(true);
     try {
-      await draftsApi.update(draft.id, { ...draft, status: 'draft', projectKey: activeProject || '' });
+      const savedDraft = await draftsApi.update(draft.id, { ...draft, status: 'draft', projectKey: activeProject || '' });
+      setDraft(savedDraft.draft);
+      setOriginalDraft(savedDraft.draft);
       setHasChanges(false);
       await refreshDrafts();
     } catch (err) {
@@ -232,7 +250,22 @@ export function EditTestCase() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <p className="text-text-muted">Loading...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+          <p className="text-text-muted">Loading test case...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
+        <Card className="text-center py-12">
+          <p className="text-error mb-2">Error loading test case</p>
+          <p className="text-text-muted text-sm">{error}</p>
+          <Button className="mt-4" onClick={() => navigate('/test-cases')}>Back to Test Cases</Button>
+        </Card>
       </div>
     );
   }
@@ -242,6 +275,7 @@ export function EditTestCase() {
       <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
         <Card className="text-center py-12">
           <p className="text-text-muted">Test case not found.</p>
+          <p className="text-text-muted text-sm mt-1">ID: {id}</p>
           <Button className="mt-4" onClick={() => navigate('/test-cases')}>Back to Test Cases</Button>
         </Card>
       </div>

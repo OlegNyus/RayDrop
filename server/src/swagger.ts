@@ -14,6 +14,13 @@ const options: swaggerJsdoc.Options = {
         description: 'Development server',
       },
     ],
+    tags: [
+      { name: 'System', description: 'System health and status endpoints' },
+      { name: 'Config', description: 'Xray configuration management' },
+      { name: 'Drafts', description: 'Test case draft management' },
+      { name: 'Settings', description: 'Application and project settings' },
+      { name: 'Xray', description: 'Xray Cloud integration' },
+    ],
     components: {
       schemas: {
         Config: {
@@ -42,24 +49,35 @@ const options: swaggerJsdoc.Options = {
             result: { type: 'string' },
           },
         },
+        XrayLinking: {
+          type: 'object',
+          properties: {
+            testPlanIds: { type: 'array', items: { type: 'string' } },
+            testExecutionIds: { type: 'array', items: { type: 'string' } },
+            testSetIds: { type: 'array', items: { type: 'string' } },
+            preconditionIds: { type: 'array', items: { type: 'string' } },
+            folderPath: { type: 'string' },
+          },
+        },
         Draft: {
           type: 'object',
           properties: {
-            id: { type: 'string' },
-            summary: { type: 'string' },
+            id: { type: 'string', description: 'UUID of the draft' },
+            summary: { type: 'string', description: 'Test case summary (format: Area | Layer | Title)' },
             description: { type: 'string' },
             testType: { type: 'string', enum: ['Manual', 'Automated'] },
             priority: { type: 'string' },
             labels: { type: 'array', items: { type: 'string' } },
             collectionId: { type: 'string', nullable: true },
             steps: { type: 'array', items: { $ref: '#/components/schemas/TestStep' } },
+            xrayLinking: { $ref: '#/components/schemas/XrayLinking' },
             status: { type: 'string', enum: ['new', 'draft', 'ready', 'imported'] },
-            updatedAt: { type: 'number' },
-            createdAt: { type: 'number' },
+            updatedAt: { type: 'number', description: 'Unix timestamp' },
+            createdAt: { type: 'number', description: 'Unix timestamp' },
             isComplete: { type: 'boolean' },
             projectKey: { type: 'string' },
-            testKey: { type: 'string' },
-            testIssueId: { type: 'string' },
+            testKey: { type: 'string', description: 'Xray test key (after import)' },
+            testIssueId: { type: 'string', description: 'Jira issue ID (after import)' },
           },
         },
         Settings: {
@@ -121,7 +139,7 @@ const options: swaggerJsdoc.Options = {
       },
     },
   },
-  apis: ['./src/routes/*.ts'],
+  apis: ['./src/app.ts', './src/routes/*.ts'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
