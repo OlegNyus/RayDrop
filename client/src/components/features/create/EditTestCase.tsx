@@ -216,8 +216,8 @@ export function EditTestCase() {
   };
 
   const handleSaveDraft = async () => {
-    if (!draft || !validateStep1()) { setCurrentStep(1); return; }
-
+    if (!draft) return;
+    // Draft can be saved with partial data - no validation required
     setSaving(true);
     try {
       const savedDraft = await draftsApi.update(draft.id, { ...draft, status: 'draft', projectKey: activeProject || '' });

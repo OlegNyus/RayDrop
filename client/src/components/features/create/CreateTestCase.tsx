@@ -165,8 +165,7 @@ export function CreateTestCase() {
   };
 
   const handleSaveDraft = async () => {
-    if (!validateStep1()) { setCurrentStep(1); return; }
-
+    // Draft can be saved with partial data - no validation required
     setSaving(true);
     try {
       const toSave: Draft = { ...draft, status: 'draft', projectKey: activeProject || '' };
