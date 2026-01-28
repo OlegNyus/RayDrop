@@ -36,6 +36,14 @@ export function Sidebar() {
     p => !settings.hiddenProjects.includes(p)
   ) || [];
 
+  // Extract project colors from settings
+  const projectColors: Record<string, string | undefined> = {};
+  if (settings?.projectSettings) {
+    Object.entries(settings.projectSettings).forEach(([key, value]) => {
+      projectColors[key] = value?.color;
+    });
+  }
+
   // Check if we're on an edit page (should not highlight "Create Test Case")
   const isEditPage = location.pathname.includes('/edit');
 
@@ -72,6 +80,7 @@ export function Sidebar() {
             activeProject={activeProject}
             onSelect={setActiveProject}
             draftCounts={draftCounts}
+            projectColors={projectColors}
           />
         </div>
       )}
