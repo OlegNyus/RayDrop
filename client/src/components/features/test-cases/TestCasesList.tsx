@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { Card, Button, StatusBadge, Input, TestKeyLink, ConfirmModal } from '../../ui';
 import { draftsApi } from '../../../services/api';
@@ -8,11 +8,31 @@ import type { Draft, TestCaseStatus } from '../../../types';
 type SortField = 'updatedAt' | 'summary' | 'status';
 type SortOrder = 'asc' | 'desc';
 
+const VALID_STATUSES: TestCaseStatus[] = ['new', 'draft', 'ready', 'imported'];
+
 export function TestCasesList() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { drafts, refreshDrafts } = useApp();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<TestCaseStatus | 'all'>('all');
+
+  // Initialize status filter from URL query param
+  const initialStatus = searchParams.get('status');
+  const [statusFilter, setStatusFilter] = useState<TestCaseStatus | 'all'>(
+    initialStatus && VALID_STATUSES.includes(initialStatus as TestCaseStatus)
+      ? (initialStatus as TestCaseStatus)
+      : 'all'
+  );
+
+  // Sync URL when filter changes
+  useEffect(() => {
+    if (statusFilter === 'all') {
+      searchParams.delete('status');
+    } else {
+      searchParams.set('status', statusFilter);
+    }
+    setSearchParams(searchParams, { replace: true });
+  }, [statusFilter, searchParams, setSearchParams]);
   const [sortField, setSortField] = useState<SortField>('updatedAt');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [deleteTarget, setDeleteTarget] = useState<Draft | null>(null);

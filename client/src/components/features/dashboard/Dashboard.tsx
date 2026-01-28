@@ -2,12 +2,60 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { Card, StatusBadge, TestKeyLink } from '../../ui';
 
-// Status configuration with colors matching StatusBadge
+// Status configuration with colors, icons, and descriptions
 const STATUS_CONFIG = {
-  new: { label: 'New', color: '#3B82F6', bgClass: 'bg-blue-500' },
-  draft: { label: 'Draft', color: '#F59E0B', bgClass: 'bg-amber-500' },
-  ready: { label: 'Ready', color: '#22C55E', bgClass: 'bg-green-500' },
-  imported: { label: 'Imported', color: '#059669', bgClass: 'bg-emerald-600' },
+  new: {
+    label: 'New',
+    color: '#3B82F6',
+    bgClass: 'bg-blue-500',
+    lightBg: 'bg-blue-500/10',
+    hoverBg: 'hover:bg-blue-500/20',
+    description: 'Just created',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+      </svg>
+    ),
+  },
+  draft: {
+    label: 'Draft',
+    color: '#F59E0B',
+    bgClass: 'bg-amber-500',
+    lightBg: 'bg-amber-500/10',
+    hoverBg: 'hover:bg-amber-500/20',
+    description: 'Work in progress',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>
+    ),
+  },
+  ready: {
+    label: 'Ready',
+    color: '#22C55E',
+    bgClass: 'bg-green-500',
+    lightBg: 'bg-green-500/10',
+    hoverBg: 'hover:bg-green-500/20',
+    description: 'Ready to import',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  imported: {
+    label: 'Imported',
+    color: '#059669',
+    bgClass: 'bg-emerald-600',
+    lightBg: 'bg-emerald-600/10',
+    hoverBg: 'hover:bg-emerald-600/20',
+    description: 'In Xray',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      </svg>
+    ),
+  },
 } as const;
 
 export function Dashboard() {
@@ -48,7 +96,7 @@ export function Dashboard() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Donut Chart */}
         <Card className="flex flex-col items-center justify-center py-6">
           <DonutChart stats={stats} total={total} />
@@ -56,12 +104,14 @@ export function Dashboard() {
         </Card>
 
         {/* Status Cards */}
-        <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 content-start">
           {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map(status => (
             <StatusCard
               key={status}
               value={stats[status]}
+              total={total}
               config={STATUS_CONFIG[status]}
+              onClick={() => navigate(`/test-cases?status=${status}`)}
             />
           ))}
         </div>
@@ -122,22 +172,78 @@ export function Dashboard() {
   );
 }
 
-// Color-coded status card
+// Interactive status card with improved UX
 function StatusCard({
   value,
+  total,
   config,
+  onClick,
 }: {
   value: number;
-  config: { label: string; color: string; bgClass: string };
+  total: number;
+  config: {
+    label: string;
+    color: string;
+    bgClass: string;
+    lightBg: string;
+    hoverBg: string;
+    description: string;
+    icon: React.ReactNode;
+  };
+  onClick: () => void;
 }) {
+  const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+  const hasItems = value > 0;
+
   return (
-    <Card className="relative overflow-hidden">
-      <div className={`absolute top-0 left-0 w-1 h-full ${config.bgClass}`} />
-      <div className="pl-3">
-        <p className="text-2xl font-bold text-text-primary">{value}</p>
-        <p className="text-sm text-text-secondary">{config.label}</p>
+    <button
+      onClick={onClick}
+      className={`relative w-full text-left rounded-xl border border-border bg-card px-3 py-2.5 transition-all duration-200
+        hover:shadow-lg hover:scale-[1.02] hover:border-transparent
+        ${config.hoverBg} group cursor-pointer`}
+      style={{
+        boxShadow: hasItems ? `0 0 0 1px ${config.color}20` : undefined,
+      }}
+    >
+      {/* Colored accent line */}
+      <div
+        className={`absolute top-0 left-0 w-1 h-full rounded-l-xl transition-all duration-200 group-hover:w-1.5`}
+        style={{ backgroundColor: config.color }}
+      />
+
+      {/* Icon badge */}
+      <div
+        className={`absolute top-2 right-2 p-1 rounded-lg ${config.lightBg} transition-transform duration-200 group-hover:scale-110`}
+        style={{ color: config.color }}
+      >
+        {config.icon}
       </div>
-    </Card>
+
+      {/* Content */}
+      <div className="pl-2">
+        <p
+          className="text-2xl font-bold transition-colors duration-200"
+          style={{ color: hasItems ? config.color : undefined }}
+        >
+          {value}
+        </p>
+        <p className="text-sm font-medium text-text-primary">{config.label}</p>
+
+        {/* Percentage bar */}
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1 h-1 bg-sidebar rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${percentage}%`,
+                backgroundColor: config.color,
+              }}
+            />
+          </div>
+          <span className="text-xs text-text-muted min-w-[28px] text-right">{percentage}%</span>
+        </div>
+      </div>
+    </button>
   );
 }
 

@@ -83,14 +83,7 @@ export function EditTestCase() {
     }
   }, [activeProject, draft, navigate]);
 
-  useEffect(() => {
-    if (activeProject) {
-      loadProjectSettings();
-      loadXrayEntities();
-    }
-  }, [activeProject]);
-
-  const loadProjectSettings = async () => {
+  const loadProjectSettings = useCallback(async () => {
     if (!activeProject) return;
     try {
       const settings = await settingsApi.getProjectSettings(activeProject);
@@ -98,9 +91,9 @@ export function EditTestCase() {
     } catch (err) {
       console.error('Failed to load project settings:', err);
     }
-  };
+  }, [activeProject]);
 
-  const loadXrayEntities = async () => {
+  const loadXrayEntities = useCallback(async () => {
     if (!activeProject) return;
     setLoadingXray(true);
     try {
@@ -120,7 +113,14 @@ export function EditTestCase() {
     } finally {
       setLoadingXray(false);
     }
-  };
+  }, [activeProject]);
+
+  useEffect(() => {
+    if (activeProject) {
+      loadProjectSettings();
+      loadXrayEntities();
+    }
+  }, [activeProject, loadProjectSettings, loadXrayEntities]);
 
   const updateDraft = useCallback((updates: Partial<Draft>) => {
     setDraft(d => d ? { ...d, ...updates, updatedAt: Date.now() } : null);
@@ -285,34 +285,42 @@ export function EditTestCase() {
       const testIssueId = importResult.testIssueIds[0];
       const testKey = importResult.testKeys[0];
 
-      // Link to test plans
-      for (const testPlanId of draft.xrayLinking.testPlanIds) {
-        await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
-      }
+      // Parallelize all Xray linking operations for better performance
+      const linkingPromises: Promise<unknown>[] = [
+        // Link to test plans
+        ...draft.xrayLinking.testPlanIds.map(testPlanId =>
+          xrayApi.addTestsToTestPlan(testPlanId, [testIssueId])
+        ),
+        // Link to test executions
+        ...draft.xrayLinking.testExecutionIds.map(testExecutionId =>
+          xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId])
+        ),
+        // Link to test sets
+        ...draft.xrayLinking.testSetIds.map(testSetId =>
+          xrayApi.addTestsToTestSet(testSetId, [testIssueId])
+        ),
+      ];
 
-      // Link to test executions
-      for (const testExecutionId of draft.xrayLinking.testExecutionIds) {
-        await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
-      }
-
-      // Link to test sets
-      for (const testSetId of draft.xrayLinking.testSetIds) {
-        await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
-      }
-
-      // Add to folder
+      // Add folder linking if configured
       if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
-        await xrayApi.addTestsToFolder(
-          draft.xrayLinking.projectId,
-          draft.xrayLinking.folderPath,
-          [testIssueId]
+        linkingPromises.push(
+          xrayApi.addTestsToFolder(
+            draft.xrayLinking.projectId,
+            draft.xrayLinking.folderPath,
+            [testIssueId]
+          )
         );
       }
 
-      // Link preconditions
+      // Add preconditions linking if any
       if (draft.xrayLinking.preconditionIds.length > 0) {
-        await xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds);
+        linkingPromises.push(
+          xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds)
+        );
       }
+
+      // Execute all linking operations in parallel
+      await Promise.all(linkingPromises);
 
       // Update local state with imported info
       setDraft({
