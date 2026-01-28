@@ -144,6 +144,33 @@ export const xrayApi = {
   getProjectId: (projectKey: string) => request<{ projectId: string }>(`/xray/project-id/${projectKey}`),
   getFolders: (projectId: string, path = '/') => request<FolderNode>(`/xray/folders/${projectId}?path=${encodeURIComponent(path)}`),
 
+  // Linking endpoints
+  addTestsToTestPlan: (testPlanId: string, testIssueIds: string[]) =>
+    request<{ addedTests: string[] }>(`/xray/test-plans/${testPlanId}/add-tests`, {
+      method: 'POST',
+      body: JSON.stringify({ testIssueIds }),
+    }),
+  addTestsToTestExecution: (testExecutionId: string, testIssueIds: string[]) =>
+    request<{ addedTests: string[] }>(`/xray/test-executions/${testExecutionId}/add-tests`, {
+      method: 'POST',
+      body: JSON.stringify({ testIssueIds }),
+    }),
+  addTestsToTestSet: (testSetId: string, testIssueIds: string[]) =>
+    request<{ addedTests: string[] }>(`/xray/test-sets/${testSetId}/add-tests`, {
+      method: 'POST',
+      body: JSON.stringify({ testIssueIds }),
+    }),
+  addTestsToFolder: (projectId: string, folderPath: string, testIssueIds: string[]) =>
+    request<{ addedTests: string[] }>('/xray/folders/add-tests', {
+      method: 'POST',
+      body: JSON.stringify({ projectId, folderPath, testIssueIds }),
+    }),
+  addPreconditionsToTest: (testIssueId: string, preconditionIssueIds: string[]) =>
+    request<{ addedPreconditions: string[] }>(`/xray/tests/${testIssueId}/add-preconditions`, {
+      method: 'POST',
+      body: JSON.stringify({ preconditionIssueIds }),
+    }),
+
   // Helper to get all folders - flattens nested structure from single API call
   async getAllFolders(projectKey: string): Promise<{ path: string; name: string }[]> {
     try {

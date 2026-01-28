@@ -36,6 +36,8 @@ export function CreateTestCase() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showXrayValidation, setShowXrayValidation] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importSuccess, setImportSuccess] = useState<{ testKey: string } | null>(null);
 
   useEffect(() => {
     if (activeProject) {
@@ -208,6 +210,92 @@ export function CreateTestCase() {
     }
   };
 
+  const handleImportToXray = async () => {
+    if (!activeProject) return;
+    if (!validateStep1()) { setCurrentStep(1); return; }
+    if (!validateStep2()) { setCurrentStep(2); return; }
+    setShowXrayValidation(true);
+    if (!isStep3Valid()) { setCurrentStep(3); return; }
+
+    setImporting(true);
+    setErrors({});
+    setImportSuccess(null);
+
+    try {
+      // First save/create the draft as ready
+      let draftId = savedId;
+      const toSave: Draft = { ...draft, status: 'ready', isComplete: true, projectKey: activeProject };
+
+      if (savedId) {
+        await draftsApi.update(savedId, toSave);
+      } else {
+        const result = await draftsApi.create(toSave);
+        draftId = result.draft.id;
+        setSavedId(draftId);
+      }
+
+      if (!draftId) {
+        throw new Error('Failed to save draft before import');
+      }
+
+      // Import to Xray
+      const importResult = await xrayApi.import([draftId], activeProject);
+
+      if (!importResult.success || !importResult.testIssueIds || !importResult.testKeys) {
+        throw new Error(importResult.error || 'Import failed');
+      }
+
+      const testIssueId = importResult.testIssueIds[0];
+      const testKey = importResult.testKeys[0];
+
+      // Link to test plans
+      for (const testPlanId of draft.xrayLinking.testPlanIds) {
+        await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
+      }
+
+      // Link to test executions
+      for (const testExecutionId of draft.xrayLinking.testExecutionIds) {
+        await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
+      }
+
+      // Link to test sets
+      for (const testSetId of draft.xrayLinking.testSetIds) {
+        await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
+      }
+
+      // Add to folder
+      if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
+        await xrayApi.addTestsToFolder(
+          draft.xrayLinking.projectId,
+          draft.xrayLinking.folderPath,
+          [testIssueId]
+        );
+      }
+
+      // Link preconditions
+      if (draft.xrayLinking.preconditionIds.length > 0) {
+        await xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds);
+      }
+
+      // Update local state with imported info
+      setDraft({
+        ...draft,
+        status: 'imported',
+        testKey,
+        testIssueId,
+      });
+      setHasChanges(false);
+      setImportSuccess({ testKey });
+
+      await refreshDrafts();
+    } catch (err) {
+      console.error('Failed to import to Xray:', err);
+      setErrors({ import: err instanceof Error ? err.message : 'Failed to import to Xray' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const resetForm = () => {
     if (hasChanges && !confirm('You have unsaved changes. Are you sure you want to reset?')) return;
     setDraft(createEmptyDraft(activeProject || ''));
@@ -239,6 +327,17 @@ export function CreateTestCase() {
 
       {errors.save && (
         <div className="p-3 bg-red-100 dark:bg-red-900/30 text-error rounded-lg text-sm">{errors.save}</div>
+      )}
+
+      {errors.import && (
+        <div className="p-3 bg-red-100 dark:bg-red-900/30 text-error rounded-lg text-sm">{errors.import}</div>
+      )}
+
+      {importSuccess && (
+        <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm flex items-center gap-2">
+          <span className="text-green-500">✓</span>
+          Successfully imported as <strong>{importSuccess.testKey}</strong>
+        </div>
       )}
 
       {currentStep === 1 && (
@@ -274,17 +373,30 @@ export function CreateTestCase() {
 
       <div className="flex justify-between pt-4 border-t border-border">
         {currentStep > 1 ? (
-          <Button variant="ghost" onClick={prevStep}>← Previous</Button>
+          <Button variant="ghost" onClick={prevStep} disabled={importing}>← Previous</Button>
         ) : <div />}
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={resetForm}>Reset</Button>
-          <Button variant="secondary" onClick={handleSaveDraft} disabled={saving}>
-            {savedId ? 'Update Draft' : 'Save Draft'}
-          </Button>
+          <Button variant="ghost" onClick={resetForm} disabled={importing}>Reset</Button>
+          {draft.status !== 'imported' && (
+            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || importing}>
+              {savedId ? 'Update Draft' : 'Save Draft'}
+            </Button>
+          )}
           {currentStep < 3 ? (
-            <Button onClick={nextStep}>Next →</Button>
+            <Button onClick={nextStep} disabled={importing}>Next →</Button>
+          ) : draft.status === 'imported' ? (
+            <Button disabled>
+              ✓ Imported as {draft.testKey}
+            </Button>
           ) : (
-            <Button onClick={handleSaveReady} disabled={saving}>{saving ? 'Saving...' : 'Save & Mark Ready'}</Button>
+            <>
+              <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing}>
+                {saving ? 'Saving...' : 'Save & Mark Ready'}
+              </Button>
+              <Button onClick={handleImportToXray} disabled={saving || importing}>
+                {importing ? 'Importing...' : 'Import to Xray'}
+              </Button>
+            </>
           )}
         </div>
       </div>

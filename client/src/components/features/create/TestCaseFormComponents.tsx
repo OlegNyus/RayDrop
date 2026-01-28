@@ -92,8 +92,9 @@ export function StepIndicator({ currentStep, onStepClick, step1Valid, step2Valid
       <div className="absolute top-5 left-0 right-0 h-0.5 bg-border" />
       <div className="relative flex justify-between">
         {steps.map(step => {
-          const isComplete = step.num < currentStep && step.valid;
-          const isCurrent = step.num === currentStep;
+          // Step is complete if: (before current AND valid) OR (step 3 with all required fields filled)
+          const isComplete = (step.num < currentStep && step.valid) || (step.num === 3 && step.valid);
+          const isCurrent = step.num === currentStep && !isComplete;
           const isClickable = step.num <= currentStep || (step.num === 2 && step1Valid) || (step.num === 3 && step2Valid);
 
           return (
@@ -115,7 +116,7 @@ export function StepIndicator({ currentStep, onStepClick, step1Valid, step2Valid
                 ) : step.num}
               </div>
               <span className={`text-xs font-medium transition-colors ${
-                isCurrent ? 'text-accent' : isComplete ? 'text-success' : 'text-text-muted'
+                isComplete ? 'text-success' : isCurrent ? 'text-accent' : 'text-text-muted'
               }`}>{step.label}</span>
             </button>
           );
@@ -124,7 +125,7 @@ export function StepIndicator({ currentStep, onStepClick, step1Valid, step2Valid
         {/* Imported indicator */}
         <div className={`flex flex-col items-center gap-2 ${isImported ? '' : 'opacity-30'}`}>
           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold border-2 ${
-            isImported ? 'bg-purple-500 border-purple-500 text-white' : 'bg-card border-border text-text-muted'
+            isImported ? 'bg-success border-success text-white' : 'bg-card border-border text-text-muted'
           }`}>
             {isImported ? (
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -136,7 +137,7 @@ export function StepIndicator({ currentStep, onStepClick, step1Valid, step2Valid
               </svg>
             )}
           </div>
-          <span className={`text-xs font-medium ${isImported ? 'text-purple-500' : 'text-text-muted'}`}>Imported</span>
+          <span className={`text-xs font-medium ${isImported ? 'text-success' : 'text-text-muted'}`}>Imported</span>
         </div>
       </div>
     </div>

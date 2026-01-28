@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
-import { Card, StatusBadge } from '../../ui';
+import { Card, StatusBadge, TestKeyLink } from '../../ui';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -59,9 +59,12 @@ export function Dashboard() {
                 className="flex items-center justify-between p-3 bg-background rounded-lg hover:bg-sidebar-hover cursor-pointer transition-colors"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary truncate">
-                    {draft.summary || 'Untitled'}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-text-primary truncate">
+                      {draft.summary || 'Untitled'}
+                    </p>
+                    {draft.testKey && <TestKeyLink testKey={draft.testKey} />}
+                  </div>
                   <p className="text-xs text-text-muted">
                     {new Date(draft.updatedAt).toLocaleDateString()}
                   </p>

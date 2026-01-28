@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
-import { Card, Button, StatusBadge, Input } from '../../ui';
+import { Card, Button, StatusBadge, Input, TestKeyLink } from '../../ui';
 import type { Draft, TestCaseStatus } from '../../../types';
 
 type SortField = 'updatedAt' | 'summary' | 'status';
@@ -111,7 +111,11 @@ export function TestCasesList() {
       ) : (
         <div className="space-y-2">
           {filteredDrafts.map(draft => (
-            <TestCaseRow key={draft.id} draft={draft} onClick={() => navigate(`/test-cases/${draft.id}/edit`)} />
+            <TestCaseRow
+              key={draft.id}
+              draft={draft}
+              onClick={() => navigate(`/test-cases/${draft.id}/edit`)}
+            />
           ))}
         </div>
       )}
@@ -126,16 +130,18 @@ export function TestCasesList() {
 
 function TestCaseRow({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   return (
-    <Card padding="sm" className="hover:border-accent transition-colors cursor-pointer" onClick={onClick}>
+    <Card
+      padding="sm"
+      className="hover:border-accent transition-colors cursor-pointer"
+      onClick={onClick}
+    >
       <div className="flex items-center gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-medium text-text-primary truncate">
               {draft.summary || 'Untitled'}
             </h3>
-            {draft.testKey && (
-              <span className="text-xs text-accent font-mono">{draft.testKey}</span>
-            )}
+            {draft.testKey && <TestKeyLink testKey={draft.testKey} />}
           </div>
           <p className="text-sm text-text-muted truncate mt-1">
             {draft.description || 'No description'}
