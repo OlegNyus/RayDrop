@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { readConfig, writeConfig } from './fileOperations.js';
-import type { Config, XrayEntity, FolderNode, ImportResult, ValidationResult, Draft } from '../types.js';
+import type { Config, XrayEntity, FolderNode, ImportResult, ValidationResult, Draft, TestWithDetails } from '../types.js';
 
 const XRAY_AUTH_URL = 'https://xray.cloud.getxray.app/api/v2/authenticate';
 const XRAY_IMPORT_URL = 'https://xray.cloud.getxray.app/api/v1/import/test/bulk';
@@ -1202,4 +1202,59 @@ export async function getPreconditionDetails(issueId: string): Promise<Precondit
     priority: precondition.jira?.priority?.name || '',
     labels: precondition.jira?.labels || [],
   };
+}
+
+// ============ Get Tests by Jira Status ============
+
+export async function getTestsByStatus(projectKey: string, status: string): Promise<TestWithDetails[]> {
+  const query = `
+    query GetTests($jql: String!, $limit: Int!) {
+      getTests(jql: $jql, limit: $limit) {
+        total
+        results {
+          issueId
+          jira(fields: ["key", "summary", "priority", "labels", "assignee", "created", "updated"])
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTests: {
+      total: number;
+      results: Array<{
+        issueId: string;
+        jira?: {
+          key: string;
+          summary: string;
+          priority?: { name: string; iconUrl?: string };
+          labels?: string[];
+          assignee?: { displayName: string; avatarUrls?: { '24x24'?: string } };
+          created: string;
+          updated: string;
+        };
+      }>;
+    };
+  }
+
+  // Use JQL to filter by project, type=Test, and status
+  const jql = `project = '${projectKey}' AND issuetype = Test AND status = '${status}'`;
+
+  const data = await executeGraphQL<Result>(query, {
+    jql,
+    limit: 200,
+  });
+
+  return data.getTests.results.map((t) => ({
+    issueId: t.issueId,
+    key: t.jira?.key || '',
+    summary: t.jira?.summary || '',
+    priority: t.jira?.priority?.name || 'Medium',
+    priorityIconUrl: t.jira?.priority?.iconUrl,
+    labels: t.jira?.labels || [],
+    assignee: t.jira?.assignee?.displayName,
+    assigneeAvatarUrl: t.jira?.assignee?.avatarUrls?.['24x24'],
+    created: t.jira?.created || '',
+    updated: t.jira?.updated || '',
+  }));
 }

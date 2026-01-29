@@ -1,4 +1,4 @@
-import type { Config, ConfigInput, Settings, ProjectSettings, Draft, XrayEntity, ImportResult } from '../types';
+import type { Config, ConfigInput, Settings, ProjectSettings, Draft, XrayEntity, ImportResult, TestWithDetails } from '../types';
 
 const API_BASE = '/api';
 
@@ -213,6 +213,10 @@ export const xrayApi = {
     totalTests: number;
     statuses: Array<{ status: string; count: number; color: string }>;
   }>(`/xray/test-execution/${issueId}/status`),
+
+  // Get tests by Jira workflow status (for TC Review)
+  getTestsByStatus: (projectKey: string, status: string) =>
+    request<TestWithDetails[]>(`/xray/tests/by-status/${projectKey}?status=${encodeURIComponent(status)}`),
 
   // Helper to get all folders - flattens nested structure from single API call
   async getAllFolders(projectKey: string): Promise<{ path: string; name: string }[]> {

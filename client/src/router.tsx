@@ -8,6 +8,7 @@ import { SettingsPage } from './components/features/settings/SettingsPage';
 import { XrayEntityPage } from './components/features/xray/XrayEntityPage';
 import { XrayTestView } from './components/features/xray/XrayTestView';
 import { XrayPreconditionView } from './components/features/xray/XrayPreconditionView';
+import { TCReviewPage } from './components/features/review/TCReviewPage';
 
 export const router = createBrowserRouter([
   {
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'test-cases', element: <TestCasesList /> },
+      { path: 'tc-review', element: <TCReviewPage /> },
       { path: 'test-cases/new', element: <CreateTestCase /> },
       { path: 'test-cases/:id/edit', element: <EditTestCase /> },
       { path: 'test-sets', element: <XrayEntityPage type="test-sets" /> },

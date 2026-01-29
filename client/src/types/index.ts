@@ -118,3 +118,17 @@ export interface ImportResult {
   error?: string;
 }
 
+// Test with detailed Jira fields (for TC Review page)
+export interface TestWithDetails {
+  issueId: string;
+  key: string;
+  summary: string;
+  priority: string;
+  priorityIconUrl?: string;
+  labels: string[];
+  assignee?: string;
+  assigneeAvatarUrl?: string;
+  created: string;
+  updated: string;
+}
+
