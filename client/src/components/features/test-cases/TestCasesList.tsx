@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { Card, Button, StatusBadge, Input, TestKeyLink, ConfirmModal } from '../../ui';
-import { draftsApi } from '../../../services/api';
+import { draftsApi, xrayApi } from '../../../services/api';
 import type { Draft, TestCaseStatus } from '../../../types';
 
 type SortField = 'updatedAt' | 'summary' | 'status';
@@ -40,7 +40,12 @@ export function TestCasesList() {
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+
+  // Bulk action states
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const filteredDrafts = useMemo(() => {
     let result = [...drafts];
@@ -93,6 +98,7 @@ export function TestCasesList() {
   };
 
   const toggleSelectAll = () => {
+    setValidationError(null);
     if (allSelected) {
       setSelectedIds(new Set());
     } else {
@@ -101,6 +107,7 @@ export function TestCasesList() {
   };
 
   const toggleSelect = (id: string) => {
+    setValidationError(null);
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -132,27 +139,103 @@ export function TestCasesList() {
     }
   };
 
-  const handleBulkDelete = async () => {
-    setDeleting(true);
+  // Analyze selected items by status
+  const selectedByStatus = useMemo(() => {
+    const result = {
+      ready: [] as Draft[],
+      draft: [] as Draft[],
+      newStatus: [] as Draft[],
+      imported: [] as Draft[],
+    };
+    filteredDrafts.forEach(d => {
+      if (!validSelectedIds.has(d.id)) return;
+      switch (d.status) {
+        case 'ready': result.ready.push(d); break;
+        case 'draft': result.draft.push(d); break;
+        case 'new': result.newStatus.push(d); break;
+        case 'imported': result.imported.push(d); break;
+      }
+    });
+    return result;
+  }, [filteredDrafts, validSelectedIds]);
+
+  // Validate if a test case has all required fields
+  const isTestCaseComplete = (draft: Draft): boolean => {
+    // Check required basic fields
+    if (!draft.summary.trim()) return false;
+    if (!draft.description.trim()) return false;
+
+    // Check that there's at least one step
+    if (draft.steps.length === 0) return false;
+
+    // Check all steps have required fields
+    for (const step of draft.steps) {
+      if (!step.action.trim()) return false;
+      if (!step.result.trim()) return false;
+    }
+
+    return true;
+  };
+
+  // Count how many draft/new items are complete (can be marked as ready)
+  const completeDraftNewCount = useMemo(() => {
+    const toCheck = [...selectedByStatus.draft, ...selectedByStatus.newStatus];
+    return toCheck.filter(d => isTestCaseComplete(d)).length;
+  }, [selectedByStatus.draft, selectedByStatus.newStatus]);
+
+  const handleBulkMarkReady = async () => {
+    setValidationError(null);
+
+    // Check which items can be marked as ready
+    const toUpdate = [...selectedByStatus.draft, ...selectedByStatus.newStatus];
+    const complete = toUpdate.filter(d => isTestCaseComplete(d));
+    const incomplete = toUpdate.filter(d => !isTestCaseComplete(d));
+
+    if (complete.length === 0) {
+      setValidationError(
+        `Cannot mark as Ready: ${incomplete.length} test case${incomplete.length > 1 ? 's are' : ' is'} missing required fields (summary, description, or test steps).`
+      );
+      return;
+    }
+
+    setBulkUpdating(true);
     try {
-      // Delete all selected items
+      // Only mark complete items as ready
       await Promise.all(
-        Array.from(validSelectedIds).map(id => draftsApi.delete(id))
+        complete.map(d => draftsApi.update(d.id, { ...d, status: 'ready' }))
       );
       await refreshDrafts();
       setSelectedIds(new Set());
-      setShowBulkDeleteModal(false);
+
+      // Show warning if some items couldn't be updated
+      if (incomplete.length > 0) {
+        setValidationError(
+          `${complete.length} marked as Ready. ${incomplete.length} skipped (missing required fields).`
+        );
+      }
     } catch (err) {
-      console.error('Failed to bulk delete:', err);
+      console.error('Failed to mark as ready:', err);
+      setValidationError('Failed to update test cases. Please try again.');
     } finally {
-      setDeleting(false);
+      setBulkUpdating(false);
     }
   };
 
-  // Count imported items in selection for warning
-  const selectedImportedCount = useMemo(() => {
-    return filteredDrafts.filter(d => validSelectedIds.has(d.id) && d.status === 'imported').length;
-  }, [filteredDrafts, validSelectedIds]);
+  const handleBulkImport = async () => {
+    setBulkImporting(true);
+    try {
+      // Import all ready items to Xray using the existing bulk import API
+      const draftIds = selectedByStatus.ready.map(d => d.id);
+      await xrayApi.import(draftIds);
+      await refreshDrafts();
+      setSelectedIds(new Set());
+      setShowBulkImportModal(false);
+    } catch (err) {
+      console.error('Failed to bulk import:', err);
+    } finally {
+      setBulkImporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto px-4 py-6">
@@ -162,6 +245,28 @@ export function TestCasesList() {
         <Button onClick={() => navigate('/test-cases/new')}>+ New Test Case</Button>
       </div>
 
+      {/* Validation Error Toast */}
+      {validationError && (
+        <div className="fixed top-4 right-4 z-50 max-w-md p-4 bg-card border border-yellow-500/50 rounded-lg shadow-lg animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm text-text-primary">{validationError}</p>
+            </div>
+            <button
+              onClick={() => setValidationError(null)}
+              className="text-text-muted hover:text-text-primary"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Action Bar */}
       {validSelectedIds.size > 0 && (
         <Card padding="sm" className="bg-accent/10 border-accent">
@@ -170,20 +275,63 @@ export function TestCasesList() {
               <span className="text-sm font-medium text-text-primary">
                 {validSelectedIds.size} selected
               </span>
+              {/* Show breakdown by status */}
+              <div className="flex items-center gap-2 text-xs text-text-muted">
+                {selectedByStatus.ready.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">
+                    {selectedByStatus.ready.length} ready
+                  </span>
+                )}
+                {selectedByStatus.draft.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded">
+                    {selectedByStatus.draft.length} draft
+                  </span>
+                )}
+                {selectedByStatus.newStatus.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">
+                    {selectedByStatus.newStatus.length} new
+                  </span>
+                )}
+                {selectedByStatus.imported.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
+                    {selectedByStatus.imported.length} imported
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => setSelectedIds(new Set())}
                 className="text-sm text-text-muted hover:text-text-primary"
               >
-                Clear selection
+                Clear
               </button>
             </div>
-            <Button
-              variant="secondary"
-              className="bg-red-600 hover:bg-red-700 text-white border-red-600"
-              onClick={() => setShowBulkDeleteModal(true)}
-            >
-              Delete {validSelectedIds.size} item{validSelectedIds.size > 1 ? 's' : ''}
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Show "Mark as Ready" for draft/new items */}
+              {(selectedByStatus.draft.length > 0 || selectedByStatus.newStatus.length > 0) && (
+                <Button
+                  variant="secondary"
+                  onClick={handleBulkMarkReady}
+                  disabled={bulkUpdating || completeDraftNewCount === 0}
+                  title={completeDraftNewCount === 0 ? 'Selected test cases are missing required fields' : undefined}
+                >
+                  {bulkUpdating
+                    ? 'Updating...'
+                    : completeDraftNewCount === 0
+                      ? 'Missing Required Fields'
+                      : `Mark ${completeDraftNewCount} as Ready`
+                  }
+                </Button>
+              )}
+              {/* Show "Import to Xray" for ready items */}
+              {selectedByStatus.ready.length > 0 && (
+                <Button
+                  onClick={() => setShowBulkImportModal(true)}
+                  disabled={bulkImporting}
+                >
+                  {bulkImporting ? 'Importing...' : `Import ${selectedByStatus.ready.length} to Xray`}
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
       )}
@@ -290,20 +438,15 @@ export function TestCasesList() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* Bulk Delete Confirmation Modal */}
+      {/* Bulk Import Confirmation Modal */}
       <ConfirmModal
-        isOpen={showBulkDeleteModal}
-        title="Delete Multiple Test Cases"
-        message={`Are you sure you want to delete ${validSelectedIds.size} test case${validSelectedIds.size > 1 ? 's' : ''}?`}
-        warning={
-          selectedImportedCount > 0
-            ? `${selectedImportedCount} of these ${selectedImportedCount === 1 ? 'is an imported test case that' : 'are imported test cases that'} will only be removed from RayDrop. The Xray copies will remain.`
-            : undefined
-        }
-        confirmLabel={deleting ? 'Deleting...' : `Delete ${validSelectedIds.size} item${validSelectedIds.size > 1 ? 's' : ''}`}
-        variant="danger"
-        onConfirm={handleBulkDelete}
-        onCancel={() => setShowBulkDeleteModal(false)}
+        isOpen={showBulkImportModal}
+        title="Import to Xray"
+        message={`Import ${selectedByStatus.ready.length} test case${selectedByStatus.ready.length > 1 ? 's' : ''} to Xray?`}
+        confirmLabel={bulkImporting ? 'Importing...' : `Import ${selectedByStatus.ready.length} Test${selectedByStatus.ready.length > 1 ? 's' : ''}`}
+        variant="default"
+        onConfirm={handleBulkImport}
+        onCancel={() => setShowBulkImportModal(false)}
       />
     </div>
   );

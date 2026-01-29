@@ -68,6 +68,69 @@ interface BulkImportPayload {
   }>;
 }
 
+// Code detection for Xray export formatting
+type CodeLanguage = 'json' | 'javascript' | 'typescript' | 'none';
+
+function detectCodeLanguage(text: string): CodeLanguage {
+  if (!text || text.trim().length === 0) {
+    return 'none';
+  }
+
+  const trimmed = text.trim();
+
+  // Try JSON detection
+  if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && isValidJSON(trimmed)) {
+    return 'json';
+  }
+
+  // TypeScript patterns
+  const tsPatterns = [
+    /:\s*(string|number|boolean|any|void|never|unknown)\b/,
+    /interface\s+\w+/,
+    /type\s+\w+\s*=/,
+  ];
+  if (tsPatterns.some(p => p.test(trimmed))) {
+    return 'typescript';
+  }
+
+  // JavaScript patterns
+  const jsPatterns = [
+    /\b(const|let|var)\s+\w+\s*=/,
+    /\bfunction\s+\w*\s*\(/,
+    /=>\s*[{\(]/,
+    /\bexport\s+(default\s+)?/,
+    /\bimport\s+.*\s+from\s+/,
+    /\bclass\s+\w+/,
+    /\basync\s+(function|\()/,
+  ];
+  if (jsPatterns.some(p => p.test(trimmed))) {
+    return 'javascript';
+  }
+
+  return 'none';
+}
+
+function isValidJSON(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatDataForXray(data: string): string {
+  if (!data) return '';
+
+  const language = detectCodeLanguage(data);
+  if (language === 'none') {
+    return data;
+  }
+
+  // Wrap in Xray/Jira wiki code block format
+  return `{code:${language}}\n${data}\n{code}`;
+}
+
 function toBulkImportFormat(testCases: Draft[], projectKey: string): BulkImportPayload[] {
   return testCases.map((tc) => ({
     testtype: tc.testType || 'Manual',
@@ -79,7 +142,7 @@ function toBulkImportFormat(testCases: Draft[], projectKey: string): BulkImportP
     },
     steps: (tc.steps || []).map((step) => ({
       action: step.action || '',
-      data: step.data || '',
+      data: formatDataForXray(step.data || ''),
       result: step.result || '',
     })),
   }));

@@ -1,12 +1,24 @@
 # RayDrop
 
-Xray Test Case Manager - A web application for managing Xray Cloud test cases.
+A desktop companion app for Xray Cloud that makes creating and managing test cases faster and easier.
 
-## Tech Stack
+## What is RayDrop?
 
-- **Client**: React 19 + Vite + TypeScript + Tailwind CSS
-- **Server**: Express + TypeScript
-- **Testing**: Vitest + React Testing Library + Playwright
+RayDrop is a local web application that connects to your Jira/Xray Cloud instance and provides a streamlined interface for:
+
+- **Creating Test Cases** - Write test cases with a guided workflow (Basic Info → Test Steps → Xray Linking)
+- **Managing Drafts** - Save work locally, review and edit before importing to Xray
+- **Bulk Import** - Import multiple test cases to Xray at once
+- **Browsing Xray Entities** - View Test Sets, Test Plans, Test Executions, and Preconditions
+- **TC Review** - See all tests with "Under Review" status in one place
+
+## Why RayDrop?
+
+- **Works Offline** - Draft test cases locally without constant Jira connection
+- **Faster Workflow** - Streamlined UI focused on test case creation
+- **Bulk Operations** - Select multiple test cases and import them all at once
+- **Code Snippets** - Add JSON/JS/TS code to test data fields with syntax highlighting
+- **Multi-Project** - Switch between Jira projects easily
 
 ## Getting Started
 
@@ -14,24 +26,127 @@ Xray Test Case Manager - A web application for managing Xray Cloud test cases.
 
 - Node.js 20.19+ or 22.12+
 - npm
+- Xray Cloud credentials (Client ID and Client Secret)
 
 ### Installation
 
 ```bash
-# Install root dependencies (testing tools)
+# Clone the repository
+git clone https://github.com/your-org/RayDrop.git
+cd RayDrop
+
+# Install all dependencies
 npm install
-
-# Install client dependencies
 npm install --prefix client
-
-# Install server dependencies
 npm install --prefix server
 ```
 
 ### Running the App
 
 ```bash
-# Run both client and server
+# Start both client and server
+npm run dev
+```
+
+Open http://localhost:5173 in your browser.
+
+### First-Time Setup
+
+1. **Connect to Xray** - Enter your Xray Cloud API credentials:
+   - Client ID
+   - Client Secret
+   - Jira Base URL (e.g., `https://yourcompany.atlassian.net`)
+
+2. **Add a Project** - Enter a Jira project key (e.g., `WCP`) to start working
+
+3. **Create Test Cases** - Navigate to "Create Test Case" and start writing
+
+## How It Works
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   RayDrop   │────▶│   Express   │────▶│  Xray Cloud │
+│   (React)   │◀────│   Server    │◀────│     API     │
+└─────────────┘     └─────────────┘     └─────────────┘
+        │                  │
+        │                  ▼
+        │           ┌─────────────┐
+        └──────────▶│ Local Files │
+                    │ (JSON)      │
+                    └─────────────┘
+```
+
+- **Client** (React) - The UI you interact with at http://localhost:5173
+- **Server** (Express) - Handles API calls to Xray and stores data locally
+- **Local Storage** - Test case drafts and settings saved as JSON files
+
+### Data Storage
+
+All your data is stored locally in the project folder:
+
+| Data | Location | Contents |
+|------|----------|----------|
+| Credentials | `config/xray-config.json` | Xray API credentials |
+| Settings | `config/settings.json` | Projects, preferences |
+| Test Cases | `testCases/` | Draft test cases organized by project |
+
+**Note:** These folders are gitignored. Your data won't be lost when pulling updates.
+
+## Test Case Workflow
+
+```
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────┐
+│   New   │───▶│  Draft  │───▶│  Ready  │───▶│ Imported │
+└─────────┘    └─────────┘    └─────────┘    └──────────┘
+     │              │              │               │
+     │         Save work      Complete &      Exists in
+   Start         locally      validated         Xray
+```
+
+1. **New** - Just created, not yet saved
+2. **Draft** - Work in progress, saved locally
+3. **Ready** - Complete with all required fields, can be imported
+4. **Imported** - Successfully created in Xray
+
+## Features
+
+### Test Case Creation
+
+- Summary builder with Functional Area + Layer + Title
+- Multi-step test steps with drag-and-drop reordering
+- Code snippet support in test data fields (JSON, JS, TS)
+- Labels and priority selection
+
+### Xray Linking
+
+- Link to Test Plans, Test Sets, Test Executions
+- Add Preconditions
+- Assign to Xray folders
+
+### Bulk Operations
+
+- Select multiple test cases
+- Mark as Ready (validates required fields)
+- Import to Xray in bulk
+
+### Browse Xray Entities
+
+- View Test Sets, Test Plans, Test Executions, Preconditions
+- See test counts and execution status
+- Navigate to detailed views
+
+## Tech Stack
+
+- **Client**: React 19 + Vite + TypeScript + Tailwind CSS
+- **Server**: Express + TypeScript
+- **Testing**: Vitest + React Testing Library + Playwright
+
+## Development
+
+### Running in Development
+
+```bash
+# Run both client and server with hot reload
 npm run dev
 
 # Or run separately
@@ -39,84 +154,24 @@ npm run dev:client  # http://localhost:5173
 npm run dev:server  # http://localhost:3001
 ```
 
-### Building
+### Building for Production
 
 ```bash
 npm run build
 ```
 
-## Testing
-
-### Test Structure
-
-```
-tests/                      # Unit + Integration tests
-├── setup/                  # Setup/Config feature area
-│   ├── form.test.tsx       # Component tests
-│   └── api.test.ts         # Server API tests
-├── test-cases/             # Test Cases feature area
-├── dashboard/              # Dashboard feature area
-├── settings/               # Settings feature area
-├── fixtures/               # Reusable test data
-├── mocks/                  # MSW API mock handlers
-└── helpers/                # Test utilities
-
-e2e/                        # End-to-end tests (Playwright)
-├── playwright.config.ts
-└── setup.spec.ts
-```
-
 ### Running Tests
 
 ```bash
-# Run all unit/integration tests
+# Unit/Integration tests
 npm test
 
-# Run tests in watch mode
-npm run test:watch
-
-# Run with Vitest UI
-npm run test:ui
-
-# Run with coverage report
-npm run test:coverage
-
-# Run and open HTML coverage report
-npm run test:coverage:html
-
-# Run E2E tests
+# E2E tests
 npm run test:e2e
 
-# Run E2E tests with UI
-npm run test:e2e:ui
-
-# Run all tests (unit + E2E)
+# All tests
 npm run test:all
 ```
-
-### Coverage Thresholds
-
-| Metric | Global | Critical Files |
-|--------|--------|----------------|
-| Statements | 80% | 90% |
-| Branches | 75% | 85% |
-| Functions | 80% | 90% |
-| Lines | 80% | 90% |
-
-### Coverage Reports
-
-After running `npm run test:coverage`:
-
-- **HTML Report**: `coverage/index.html` - Browsable coverage report
-- **LCOV**: `coverage/lcov.info` - For CI tools (Codecov, Coveralls)
-- **JSON**: `coverage/coverage-summary.json` - Programmatic access
-
-### E2E Reports
-
-After running `npm run test:e2e`:
-
-- **HTML Report**: `coverage/e2e-report/index.html`
-- **JSON Results**: `coverage/e2e-results.json`
 
 ## Project Structure
 
@@ -131,22 +186,22 @@ RayDrop/
 ├── server/                 # Express backend
 │   └── src/
 │       ├── routes/         # API endpoints
-│       └── utils/          # Utilities
-├── docs/                   # Documentation
-│   └── requirements/       # Feature requirements
+│       └── utils/          # Xray client, file operations
 ├── tests/                  # Unit/Integration tests
-├── e2e/                    # E2E tests
-└── config/                 # Runtime config (gitignored)
+├── e2e/                    # E2E tests (Playwright)
+├── config/                 # Runtime config (gitignored)
+└── testCases/              # Test case drafts (gitignored)
 ```
 
-## API Endpoints
+## Backup & Data Safety
 
-- `GET /api/config` - Get configuration status
-- `POST /api/config` - Save configuration
-- `POST /api/config/test-connection` - Test Xray credentials
-- `DELETE /api/config` - Delete configuration
-- `GET /api/settings` - Get user settings
-- `GET /api/drafts` - Get test case drafts
+Your local data is safe during normal git operations (`pull`, `merge`, `checkout`).
+
+**To backup your data**, copy these folders:
+- `config/` - Your credentials and settings
+- `testCases/` - All your test case drafts
+
+**Caution:** Running `git clean -fd` will delete these folders!
 
 ## License
 
