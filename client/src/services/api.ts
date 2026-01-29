@@ -175,6 +175,45 @@ export const xrayApi = {
       body: JSON.stringify({ preconditionIssueIds }),
     }),
 
+  // Get tests from entities
+  getTestsFromTestSet: (issueId: string) => request<XrayEntity[]>(`/xray/test-sets/${issueId}/tests`),
+  getTestsFromTestPlan: (issueId: string) => request<XrayEntity[]>(`/xray/test-plans/${issueId}/tests`),
+  getTestsFromTestExecution: (issueId: string) => request<XrayEntity[]>(`/xray/test-executions/${issueId}/tests`),
+  getTestsFromPrecondition: (issueId: string) => request<XrayEntity[]>(`/xray/preconditions/${issueId}/tests`),
+
+  // Get test details
+  getTestDetails: (issueId: string) => request<{
+    issueId: string;
+    key: string;
+    summary: string;
+    description: string;
+    testType: string;
+    priority: string;
+    labels: string[];
+    steps: Array<{ id: string; action: string; data: string; result: string }>;
+  }>(`/xray/tests/${issueId}`),
+
+  // Get precondition details
+  getPreconditionDetails: (issueId: string) => request<{
+    issueId: string;
+    key: string;
+    summary: string;
+    description: string;
+    preconditionType: string;
+    definition: string;
+    priority: string;
+    labels: string[];
+  }>(`/xray/precondition/${issueId}`),
+
+  // Get test execution status summary
+  getTestExecutionStatus: (issueId: string) => request<{
+    issueId: string;
+    key: string;
+    summary: string;
+    totalTests: number;
+    statuses: Array<{ status: string; count: number; color: string }>;
+  }>(`/xray/test-execution/${issueId}/status`),
+
   // Helper to get all folders - flattens nested structure from single API call
   async getAllFolders(projectKey: string): Promise<{ path: string; name: string }[]> {
     try {

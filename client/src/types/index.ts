@@ -86,6 +86,30 @@ export interface XrayEntity {
   summary: string;
 }
 
+export interface TestWithStatus extends XrayEntity {
+  status?: string;
+  statusColor?: string;
+}
+
+export interface TestSetWithCount extends XrayEntity {
+  testCount: number;
+}
+
+export interface TestPlanWithCount extends XrayEntity {
+  testCount: number;
+}
+
+export interface TestExecutionStatus {
+  status: string;
+  count: number;
+  color: string;
+}
+
+export interface TestExecutionWithStatus extends XrayEntity {
+  totalTests: number;
+  statuses: TestExecutionStatus[];
+}
+
 export interface ImportResult {
   success: boolean;
   jobId?: string;

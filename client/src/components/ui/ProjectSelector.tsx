@@ -6,6 +6,7 @@ interface ProjectSelectorProps {
   activeProject: string | null;
   onSelect: (project: string) => void;
   draftCounts?: Record<string, number>;
+  projectColors?: Record<string, string | undefined>;
 }
 
 export function ProjectSelector({
@@ -13,7 +14,9 @@ export function ProjectSelector({
   activeProject,
   onSelect,
   draftCounts = {},
+  projectColors = {},
 }: ProjectSelectorProps) {
+  const activeColor = activeProject ? projectColors[activeProject] : undefined;
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -49,8 +52,17 @@ export function ProjectSelector({
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center gap-3 px-3 py-2.5 bg-sidebar-hover/50 hover:bg-sidebar-hover border border-sidebar-border rounded-lg transition-colors"
       >
-        <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
-          <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: activeColor ? `${activeColor}20` : undefined }}
+        >
+          <svg
+            className="w-4 h-4"
+            style={{ color: activeColor }}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
         </div>
@@ -78,41 +90,60 @@ export function ProjectSelector({
       {isOpen && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           <div className="max-h-64 overflow-y-auto py-1">
-            {projects.map(project => (
-              <button
-                key={project}
-                onClick={() => {
-                  onSelect(project);
-                  setIsOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-sidebar-hover transition-colors ${
-                  project === activeProject ? 'bg-accent/10' : ''
-                }`}
-              >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                  project === activeProject ? 'bg-accent/20' : 'bg-sidebar-hover'
-                }`}>
-                  <svg className={`w-4 h-4 ${project === activeProject ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium truncate ${
-                    project === activeProject ? 'text-accent' : 'text-text-primary'
-                  }`}>
-                    {project}
-                  </p>
-                  <p className="text-xs text-text-muted">
-                    {draftCounts[project] || 0} test case{(draftCounts[project] || 0) !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                {project === activeProject && (
-                  <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            ))}
+            {projects.map(project => {
+              const color = projectColors[project];
+              const isActive = project === activeProject;
+              return (
+                <button
+                  key={project}
+                  onClick={() => {
+                    onSelect(project);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-sidebar-hover transition-colors ${
+                    isActive ? 'bg-accent/10' : ''
+                  }`}
+                  style={isActive && color ? { backgroundColor: `${color}15` } : undefined}
+                >
+                  <div
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${!color ? 'bg-sidebar-hover' : ''}`}
+                    style={{ backgroundColor: color ? `${color}20` : undefined }}
+                  >
+                    <svg
+                      className={`w-4 h-4 ${!color ? 'text-text-muted' : ''}`}
+                      style={{ color: color || undefined }}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className={`text-sm font-medium truncate ${!color && isActive ? 'text-accent' : 'text-text-primary'}`}
+                      style={color && isActive ? { color } : undefined}
+                    >
+                      {project}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      {draftCounts[project] || 0} test case{(draftCounts[project] || 0) !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  {isActive && (
+                    <svg
+                      className={`w-4 h-4 flex-shrink-0 ${!color ? 'text-accent' : ''}`}
+                      style={color ? { color } : undefined}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Manage Projects Link */}

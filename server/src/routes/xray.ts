@@ -17,6 +17,13 @@ import {
   removeTestsFromTestSet,
   removeTestsFromFolder,
   removePreconditionsFromTest,
+  getTestsFromTestSet,
+  getTestsFromTestPlan,
+  getTestsFromTestExecution,
+  getTestsFromPrecondition,
+  getTestDetails,
+  getPreconditionDetails,
+  getTestExecutionStatusSummary,
 } from '../utils/xrayClient.js';
 import { readDraft, writeDraft } from '../utils/fileOperations.js';
 import type { Draft } from '../types.js';
@@ -286,6 +293,197 @@ router.get('/folders/:projectId', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching folders:', error);
     return res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+});
+
+// ============ Get Tests from Entities ============
+
+/**
+ * @swagger
+ * /api/xray/test-sets/{issueId}/tests:
+ *   get:
+ *     summary: Get tests in a test set
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of tests
+ */
+router.get('/test-sets/:issueId/tests', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const tests = await getTestsFromTestSet(issueId);
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests from test set:', error);
+    return res.status(500).json({ error: 'Failed to fetch tests from test set' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/test-plans/{issueId}/tests:
+ *   get:
+ *     summary: Get tests in a test plan
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of tests
+ */
+router.get('/test-plans/:issueId/tests', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const tests = await getTestsFromTestPlan(issueId);
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests from test plan:', error);
+    return res.status(500).json({ error: 'Failed to fetch tests from test plan' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/test-executions/{issueId}/tests:
+ *   get:
+ *     summary: Get tests in a test execution
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of tests
+ */
+router.get('/test-executions/:issueId/tests', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const tests = await getTestsFromTestExecution(issueId);
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests from test execution:', error);
+    return res.status(500).json({ error: 'Failed to fetch tests from test execution' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/preconditions/{issueId}/tests:
+ *   get:
+ *     summary: Get tests using a precondition
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of tests
+ */
+router.get('/preconditions/:issueId/tests', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const tests = await getTestsFromPrecondition(issueId);
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests from precondition:', error);
+    return res.status(500).json({ error: 'Failed to fetch tests from precondition' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/tests/{issueId}:
+ *   get:
+ *     summary: Get test details
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Test details
+ */
+router.get('/tests/:issueId', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const test = await getTestDetails(issueId);
+    return res.json(test);
+  } catch (error) {
+    console.error('Error fetching test details:', error);
+    return res.status(500).json({ error: 'Failed to fetch test details' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/precondition/{issueId}:
+ *   get:
+ *     summary: Get precondition details
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Precondition details
+ */
+router.get('/precondition/:issueId', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const precondition = await getPreconditionDetails(issueId);
+    return res.json(precondition);
+  } catch (error) {
+    console.error('Error fetching precondition details:', error);
+    return res.status(500).json({ error: 'Failed to fetch precondition details' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/test-execution/{issueId}/status:
+ *   get:
+ *     summary: Get test execution status summary
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Test execution status summary with test run breakdown
+ */
+router.get('/test-execution/:issueId/status', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const summary = await getTestExecutionStatusSummary(issueId);
+    return res.json(summary);
+  } catch (error) {
+    console.error('Error fetching test execution status:', error);
+    return res.status(500).json({ error: 'Failed to fetch test execution status' });
   }
 });
 
