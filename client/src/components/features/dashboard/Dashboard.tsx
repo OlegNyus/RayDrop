@@ -1,6 +1,9 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { Card, StatusBadge, TestKeyLink } from '../../ui';
+import { xrayApi } from '../../../services/api';
+import type { XrayEntity } from '../../../types';
 
 // Status configuration with colors, icons, and descriptions
 const STATUS_CONFIG = {
@@ -58,9 +61,24 @@ const STATUS_CONFIG = {
   },
 } as const;
 
+interface TestExecutionStatus {
+  issueId: string;
+  key: string;
+  summary: string;
+  totalTests: number;
+  statuses: Array<{ status: string; count: number; color: string }>;
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
-  const { drafts, activeProject, settings } = useApp();
+  const { drafts, activeProject, settings, isConfigured } = useApp();
+
+  // Test Execution status state
+  const [testExecutions, setTestExecutions] = useState<XrayEntity[]>([]);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [executionStatus, setExecutionStatus] = useState<TestExecutionStatus | null>(null);
+  const [loadingExecutions, setLoadingExecutions] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(false);
 
   const stats = {
     new: drafts.filter(d => d.status === 'new').length,
@@ -77,6 +95,57 @@ export function Dashboard() {
 
   // Calculate workflow progress (imported / total)
   const progressPercent = total > 0 ? Math.round((stats.imported / total) * 100) : 0;
+
+  // Fetch test executions when project changes
+  useEffect(() => {
+    if (!activeProject || !isConfigured) {
+      setTestExecutions([]);
+      setSelectedExecutionId(null);
+      setExecutionStatus(null);
+      return;
+    }
+
+    const fetchExecutions = async () => {
+      setLoadingExecutions(true);
+      try {
+        const data = await xrayApi.getTestExecutions(activeProject);
+        setTestExecutions(data);
+        // Auto-select first execution if available
+        if (data.length > 0 && !selectedExecutionId) {
+          setSelectedExecutionId(data[0].issueId);
+        }
+      } catch (err) {
+        console.error('Failed to fetch test executions:', err);
+      } finally {
+        setLoadingExecutions(false);
+      }
+    };
+
+    fetchExecutions();
+  }, [activeProject, isConfigured]);
+
+  // Fetch execution status when selection changes
+  useEffect(() => {
+    if (!selectedExecutionId) {
+      setExecutionStatus(null);
+      return;
+    }
+
+    const fetchStatus = async () => {
+      setLoadingStatus(true);
+      try {
+        const data = await xrayApi.getTestExecutionStatus(selectedExecutionId);
+        setExecutionStatus(data);
+      } catch (err) {
+        console.error('Failed to fetch execution status:', err);
+        setExecutionStatus(null);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+
+    fetchStatus();
+  }, [selectedExecutionId]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto px-4 py-6">
@@ -135,6 +204,91 @@ export function Dashboard() {
           <span>100%</span>
         </div>
       </Card>
+
+      {/* Test Execution Status */}
+      {isConfigured && activeProject && (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="text-lg font-semibold text-text-primary">Test Execution Status</h3>
+            </div>
+
+            {/* Execution Selector */}
+            <select
+              value={selectedExecutionId || ''}
+              onChange={(e) => setSelectedExecutionId(e.target.value || null)}
+              disabled={loadingExecutions || testExecutions.length === 0}
+              className="px-3 py-1.5 text-sm bg-sidebar border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/50 max-w-xs truncate"
+            >
+              {loadingExecutions ? (
+                <option>Loading...</option>
+              ) : testExecutions.length === 0 ? (
+                <option>No executions</option>
+              ) : (
+                testExecutions.map((exec) => (
+                  <option key={exec.issueId} value={exec.issueId}>
+                    {exec.key} - {exec.summary}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          {/* Status Content */}
+          {loadingStatus ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+            </div>
+          ) : executionStatus ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              {/* Donut Chart */}
+              <div className="flex flex-col items-center">
+                <ExecutionDonutChart statuses={executionStatus.statuses} total={executionStatus.totalTests} />
+                <p className="text-sm text-text-muted mt-3">{executionStatus.key}</p>
+              </div>
+
+              {/* Status Legend */}
+              <div className="space-y-2">
+                {executionStatus.statuses.map((s) => {
+                  const percent = executionStatus.totalTests > 0
+                    ? Math.round((s.count / executionStatus.totalTests) * 100)
+                    : 0;
+                  return (
+                    <div key={s.status} className="flex items-center justify-between p-2 rounded-lg hover:bg-sidebar-hover transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                        <span className="text-sm font-medium text-text-primary">{s.status}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-text-muted">{s.count}</span>
+                        <span className="text-xs text-text-muted w-10 text-right">{percent}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-border pt-2 mt-2">
+                  <div className="flex items-center justify-between p-2">
+                    <span className="text-sm font-semibold text-text-primary">Total Tests</span>
+                    <span className="text-sm font-semibold text-text-primary">{executionStatus.totalTests}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : testExecutions.length === 0 ? (
+            <p className="text-text-muted text-center py-8">
+              No test executions found in {activeProject}
+            </p>
+          ) : (
+            <p className="text-text-muted text-center py-8">
+              Select a test execution to view status
+            </p>
+          )}
+        </Card>
+      )}
 
       {/* Recent Test Cases */}
       <Card>
@@ -322,6 +476,82 @@ function DonutChart({
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-2xl font-bold text-text-primary">{total}</span>
         <span className="text-xs text-text-muted">Total</span>
+      </div>
+    </div>
+  );
+}
+
+// Test Execution Donut Chart
+function ExecutionDonutChart({
+  statuses,
+  total,
+}: {
+  statuses: Array<{ status: string; count: number; color: string }>;
+  total: number;
+}) {
+  const size = 160;
+  const strokeWidth = 24;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const center = size / 2;
+
+  // Calculate pass rate for center display
+  const passCount = statuses.find(s => s.status.toUpperCase() === 'PASS' || s.status.toUpperCase() === 'PASSED')?.count || 0;
+  const passRate = total > 0 ? Math.round((passCount / total) * 100) : 0;
+
+  if (total === 0) {
+    return (
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size}>
+          <circle
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            className="text-sidebar"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold text-text-primary">0</span>
+          <span className="text-xs text-text-muted">Tests</span>
+        </div>
+      </div>
+    );
+  }
+
+  let currentOffset = 0;
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        {statuses.map((s, index) => {
+          const percent = s.count / total;
+          const strokeDasharray = `${percent * circumference} ${circumference}`;
+          const strokeDashoffset = -currentOffset * circumference;
+          currentOffset += percent;
+
+          return (
+            <circle
+              key={`${s.status}-${index}`}
+              cx={center}
+              cy={center}
+              r={radius}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={strokeDasharray}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              className="transition-all duration-500"
+            />
+          );
+        })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-3xl font-bold text-text-primary">{passRate}%</span>
+        <span className="text-xs text-text-muted">Pass Rate</span>
       </div>
     </div>
   );

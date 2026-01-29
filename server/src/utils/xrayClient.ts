@@ -326,8 +326,14 @@ export async function getTestPlans(projectKey: string): Promise<XrayEntity[]> {
   }));
 }
 
-export async function getTestExecutions(projectKey: string): Promise<XrayEntity[]> {
-  const query = `
+export interface TestExecutionWithStatus extends XrayEntity {
+  totalTests: number;
+  statuses: Array<{ status: string; count: number; color: string }>;
+}
+
+export async function getTestExecutions(projectKey: string): Promise<TestExecutionWithStatus[]> {
+  // First get the test executions
+  const execQuery = `
     query GetTestExecutions($jql: String!, $limit: Int!) {
       getTestExecutions(jql: $jql, limit: $limit) {
         total
@@ -339,22 +345,97 @@ export async function getTestExecutions(projectKey: string): Promise<XrayEntity[
     }
   `;
 
-  interface Result {
+  interface ExecResult {
     getTestExecutions: {
       results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
     };
   }
 
-  const data = await executeGraphQL<Result>(query, {
+  const execData = await executeGraphQL<ExecResult>(execQuery, {
     jql: `project = '${projectKey}'`,
     limit: 100,
   });
 
-  return data.getTestExecutions.results.map((te) => ({
-    issueId: te.issueId,
-    key: te.jira?.key || '',
-    summary: te.jira?.summary || '',
-  }));
+  const executions = execData.getTestExecutions.results;
+
+  if (executions.length === 0) {
+    return [];
+  }
+
+  // Get all test run statuses in a single batch request
+  const issueIds = executions.map(e => e.issueId);
+
+  const runsQuery = `
+    query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!) {
+      getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit) {
+        total
+        results {
+          status {
+            name
+            color
+          }
+          testExecution {
+            issueId
+          }
+        }
+      }
+    }
+  `;
+
+  interface RunsResult {
+    getTestRuns: {
+      total: number;
+      results: Array<{
+        status?: { name: string; color?: string };
+        testExecution?: { issueId: string };
+      }>;
+    } | null;
+  }
+
+  const runsData = await executeGraphQL<RunsResult>(runsQuery, {
+    testExecIssueIds: issueIds,
+    limit: 5000, // High limit to get all runs
+  });
+
+  // Group runs by execution
+  const statusByExecution: Record<string, Record<string, { count: number; color: string }>> = {};
+  const totalByExecution: Record<string, number> = {};
+
+  for (const run of runsData.getTestRuns?.results || []) {
+    const execId = run.testExecution?.issueId;
+    if (!execId) continue;
+
+    if (!statusByExecution[execId]) {
+      statusByExecution[execId] = {};
+      totalByExecution[execId] = 0;
+    }
+
+    totalByExecution[execId]++;
+    const statusName = run.status?.name || 'TODO';
+
+    if (!statusByExecution[execId][statusName]) {
+      statusByExecution[execId][statusName] = {
+        count: 0,
+        color: run.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
+      };
+    }
+    statusByExecution[execId][statusName].count++;
+  }
+
+  // Build the result
+  return executions.map((te) => {
+    const statuses = Object.entries(statusByExecution[te.issueId] || {})
+      .map(([status, data]) => ({ status, ...data }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      issueId: te.issueId,
+      key: te.jira?.key || '',
+      summary: te.jira?.summary || '',
+      totalTests: totalByExecution[te.issueId] || 0,
+      statuses,
+    };
+  });
 }
 
 export async function getTestSets(projectKey: string): Promise<XrayEntity[]> {
@@ -649,4 +730,385 @@ export async function removePreconditionsFromTest(testIssueId: string, precondit
 
   const data = await executeGraphQL<Result>(mutation, { issueId: testIssueId, preconditionIssueIds });
   return data.removePreconditionsFromTest;
+}
+
+// ============ Get Tests from Entities ============
+
+export async function getTestsFromTestSet(testSetId: string): Promise<XrayEntity[]> {
+  const query = `
+    query GetTestSet($issueId: String!) {
+      getTestSet(issueId: $issueId) {
+        tests(limit: 100) {
+          total
+          results {
+            issueId
+            jira(fields: ["key", "summary"])
+          }
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTestSet: {
+      tests: {
+        total: number;
+        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId: testSetId });
+  return data.getTestSet.tests.results.map((t) => ({
+    issueId: t.issueId,
+    key: t.jira?.key || '',
+    summary: t.jira?.summary || '',
+  }));
+}
+
+export async function getTestsFromTestPlan(testPlanId: string): Promise<XrayEntity[]> {
+  const query = `
+    query GetTestPlan($issueId: String!) {
+      getTestPlan(issueId: $issueId) {
+        tests(limit: 100) {
+          total
+          results {
+            issueId
+            jira(fields: ["key", "summary"])
+          }
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTestPlan: {
+      tests: {
+        total: number;
+        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId: testPlanId });
+  return data.getTestPlan.tests.results.map((t) => ({
+    issueId: t.issueId,
+    key: t.jira?.key || '',
+    summary: t.jira?.summary || '',
+  }));
+}
+
+export async function getTestsFromTestExecution(testExecutionId: string): Promise<XrayEntity[]> {
+  const query = `
+    query GetTestExecution($issueId: String!) {
+      getTestExecution(issueId: $issueId) {
+        tests(limit: 100) {
+          total
+          results {
+            issueId
+            jira(fields: ["key", "summary"])
+          }
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTestExecution: {
+      tests: {
+        total: number;
+        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId: testExecutionId });
+  const results = data.getTestExecution?.tests?.results || [];
+  return results.map((t) => ({
+    issueId: t.issueId,
+    key: t.jira?.key || '',
+    summary: t.jira?.summary || '',
+  }));
+}
+
+export async function getTestsFromPrecondition(preconditionId: string): Promise<XrayEntity[]> {
+  const query = `
+    query GetPrecondition($issueId: String!) {
+      getPrecondition(issueId: $issueId) {
+        tests(limit: 100) {
+          total
+          results {
+            issueId
+            jira(fields: ["key", "summary"])
+          }
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getPrecondition: {
+      tests: {
+        total: number;
+        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId: preconditionId });
+  return data.getPrecondition.tests.results.map((t) => ({
+    issueId: t.issueId,
+    key: t.jira?.key || '',
+    summary: t.jira?.summary || '',
+  }));
+}
+
+// ============ Get Test Details ============
+
+export interface TestStep {
+  id: string;
+  action: string;
+  data: string;
+  result: string;
+}
+
+export interface TestDetails {
+  issueId: string;
+  key: string;
+  summary: string;
+  description: string;
+  testType: string;
+  priority: string;
+  labels: string[];
+  steps: TestStep[];
+}
+
+export async function getTestDetails(issueId: string): Promise<TestDetails> {
+  const query = `
+    query GetTest($issueId: String!) {
+      getTest(issueId: $issueId) {
+        issueId
+        testType {
+          name
+        }
+        steps {
+          id
+          action
+          data
+          result
+        }
+        jira(fields: ["key", "summary", "description", "priority", "labels"])
+      }
+    }
+  `;
+
+  interface Result {
+    getTest: {
+      issueId: string;
+      testType?: { name: string };
+      steps?: Array<{ id: string; action: string; data: string; result: string }>;
+      jira?: {
+        key: string;
+        summary: string;
+        description: string;
+        priority?: { name: string };
+        labels?: string[];
+      };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId });
+  const test = data.getTest;
+
+  return {
+    issueId: test.issueId,
+    key: test.jira?.key || '',
+    summary: test.jira?.summary || '',
+    description: test.jira?.description || '',
+    testType: test.testType?.name || 'Manual',
+    priority: test.jira?.priority?.name || '',
+    labels: test.jira?.labels || [],
+    steps: (test.steps || []).map((s) => ({
+      id: s.id,
+      action: s.action || '',
+      data: s.data || '',
+      result: s.result || '',
+    })),
+  };
+}
+
+// ============ Get Precondition Details ============
+
+export interface PreconditionDetails {
+  issueId: string;
+  key: string;
+  summary: string;
+  description: string;
+  preconditionType: string;
+  definition: string;
+  priority: string;
+  labels: string[];
+}
+
+// ============ Get Test Execution Status Summary ============
+
+export interface TestRunStatus {
+  status: string;
+  count: number;
+  color: string;
+}
+
+export interface TestExecutionStatusSummary {
+  issueId: string;
+  key: string;
+  summary: string;
+  totalTests: number;
+  statuses: TestRunStatus[];
+}
+
+// Status colors matching Xray's conventions
+const STATUS_COLORS: Record<string, string> = {
+  PASS: '#22C55E',      // green
+  PASSED: '#22C55E',
+  FAIL: '#EF4444',      // red
+  FAILED: '#EF4444',
+  TODO: '#6B7280',      // gray
+  EXECUTING: '#3B82F6', // blue
+  ABORTED: '#F59E0B',   // amber
+  BLOCKED: '#EC4899',   // pink
+  PENDING: '#8B5CF6',   // purple
+};
+
+export async function getTestExecutionStatusSummary(issueId: string): Promise<TestExecutionStatusSummary> {
+  // First get the test execution details
+  const execQuery = `
+    query GetTestExecution($issueId: String!) {
+      getTestExecution(issueId: $issueId) {
+        issueId
+        jira(fields: ["key", "summary"])
+      }
+    }
+  `;
+
+  // Then get test runs with status using getTestRuns query
+  const runsQuery = `
+    query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!) {
+      getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit) {
+        total
+        results {
+          status {
+            name
+            color
+          }
+        }
+      }
+    }
+  `;
+
+  interface ExecResult {
+    getTestExecution: {
+      issueId: string;
+      jira?: { key: string; summary: string };
+    } | null;
+  }
+
+  interface RunsResult {
+    getTestRuns: {
+      total: number;
+      results: Array<{ status?: { name: string; color?: string } }>;
+    } | null;
+  }
+
+  const [execData, runsData] = await Promise.all([
+    executeGraphQL<ExecResult>(execQuery, { issueId }),
+    executeGraphQL<RunsResult>(runsQuery, { testExecIssueIds: [issueId], limit: 1000 }),
+  ]);
+
+  const execution = execData.getTestExecution;
+  const runs = runsData.getTestRuns;
+
+  if (!execution) {
+    return {
+      issueId,
+      key: '',
+      summary: '',
+      totalTests: 0,
+      statuses: [],
+    };
+  }
+
+  // Count statuses
+  const statusCounts: Record<string, { count: number; color: string }> = {};
+
+  for (const run of runs?.results || []) {
+    const statusName = run.status?.name || 'TODO';
+    if (!statusCounts[statusName]) {
+      statusCounts[statusName] = {
+        count: 0,
+        color: run.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
+      };
+    }
+    statusCounts[statusName].count++;
+  }
+
+  const statuses: TestRunStatus[] = Object.entries(statusCounts).map(([status, data]) => ({
+    status,
+    count: data.count,
+    color: data.color,
+  }));
+
+  // Sort by count descending
+  statuses.sort((a, b) => b.count - a.count);
+
+  return {
+    issueId: execution.issueId,
+    key: execution.jira?.key || '',
+    summary: execution.jira?.summary || '',
+    totalTests: runs?.total || 0,
+    statuses,
+  };
+}
+
+export async function getPreconditionDetails(issueId: string): Promise<PreconditionDetails> {
+  const query = `
+    query GetPrecondition($issueId: String!) {
+      getPrecondition(issueId: $issueId) {
+        issueId
+        preconditionType {
+          name
+        }
+        definition
+        jira(fields: ["key", "summary", "description", "priority", "labels"])
+      }
+    }
+  `;
+
+  interface Result {
+    getPrecondition: {
+      issueId: string;
+      preconditionType?: { name: string };
+      definition?: string;
+      jira?: {
+        key: string;
+        summary: string;
+        description: string;
+        priority?: { name: string };
+        labels?: string[];
+      };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId });
+  const precondition = data.getPrecondition;
+
+  return {
+    issueId: precondition.issueId,
+    key: precondition.jira?.key || '',
+    summary: precondition.jira?.summary || '',
+    description: precondition.jira?.description || '',
+    preconditionType: precondition.preconditionType?.name || 'Manual',
+    definition: precondition.definition || '',
+    priority: precondition.jira?.priority?.name || '',
+    labels: precondition.jira?.labels || [],
+  };
 }
