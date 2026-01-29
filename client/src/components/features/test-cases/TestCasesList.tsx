@@ -495,9 +495,11 @@ function TestCaseRow({
             {draft.description || 'No description'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <StatusBadge status={draft.status} />
-          <span className="text-xs text-text-muted whitespace-nowrap">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="w-20 flex justify-center">
+            <StatusBadge status={draft.status} />
+          </div>
+          <span className="text-xs text-text-muted whitespace-nowrap w-20 text-right">
             {new Date(draft.updatedAt).toLocaleDateString()}
           </span>
           {/* Delete button */}
