@@ -6,7 +6,6 @@ import { Card, Input } from '../../ui';
 import type { TestWithDetails } from '../../../types';
 
 type SortOption = 'created-desc' | 'created-asc' | 'priority' | 'key';
-type PriorityFilter = 'all' | 'Highest' | 'High' | 'Medium' | 'Low' | 'Lowest';
 
 const PRIORITY_COLORS: Record<string, string> = {
   Highest: '#DC2626', // red-600
@@ -25,21 +24,25 @@ const PRIORITY_ORDER: Record<string, number> = {
 };
 
 export function TCReviewPage() {
-  const { activeProject, isConfigured, config } = useApp();
+  const { activeProject, isConfigured, config, drafts } = useApp();
   const navigate = useNavigate();
-  const [tests, setTests] = useState<TestWithDetails[]>([]);
+  const [underReviewTests, setUnderReviewTests] = useState<TestWithDetails[]>([]);
+  const [xrayDraftTests, setXrayDraftTests] = useState<TestWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('created-desc');
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const [activeView, setActiveView] = useState<'underReview' | 'xrayDraft'>('underReview');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   const jiraBaseUrl = config?.jiraBaseUrl;
 
-  // Fetch tests under review when project changes
+  // Fetch tests under review and draft when project changes
   useEffect(() => {
     if (!activeProject || !isConfigured) {
-      setTests([]);
+      setUnderReviewTests([]);
+      setXrayDraftTests([]);
       return;
     }
 
@@ -47,10 +50,17 @@ export function TCReviewPage() {
       setLoading(true);
       setError(null);
       try {
-        const data = await xrayApi.getTestsByStatus(activeProject, 'Under Review');
-        setTests(data);
+        // Fetch both Under Review and Draft tests from Xray in parallel
+        const [underReviewData, draftData] = await Promise.all([
+          xrayApi.getTestsByStatus(activeProject, 'Under Review'),
+          xrayApi.getTestsByStatus(activeProject, 'Draft'),
+        ]);
+        setUnderReviewTests(underReviewData);
+        setXrayDraftTests(draftData);
+        setActiveView('underReview');
+        setCurrentPage(1);
       } catch (err) {
-        console.error('Failed to fetch tests under review:', err);
+        console.error('Failed to fetch tests:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch data');
       } finally {
         setLoading(false);
@@ -60,32 +70,22 @@ export function TCReviewPage() {
     fetchTests();
   }, [activeProject, isConfigured]);
 
-  // Priority stats
-  const priorityStats = useMemo(() => {
-    const stats: Record<string, number> = {
-      total: tests.length,
-      Highest: 0,
-      High: 0,
-      Medium: 0,
-      Low: 0,
-      Lowest: 0,
+  // Stats - tests under review, Xray drafts, and local RayDrop drafts
+  const stats = useMemo(() => {
+    const localDraftCount = drafts.filter(d => d.status === 'draft').length;
+    return {
+      underReview: underReviewTests.length,
+      xrayDraft: xrayDraftTests.length,
+      localDraft: localDraftCount,
     };
-    tests.forEach(t => {
-      if (stats[t.priority] !== undefined) {
-        stats[t.priority]++;
-      }
-    });
-    return stats;
-  }, [tests]);
+  }, [underReviewTests, xrayDraftTests, drafts]);
+
+  // Get current tests based on active view
+  const currentTests = activeView === 'underReview' ? underReviewTests : xrayDraftTests;
 
   // Filter and sort tests
   const filteredAndSortedTests = useMemo(() => {
-    let result = [...tests];
-
-    // Apply priority filter
-    if (priorityFilter !== 'all') {
-      result = result.filter(t => t.priority === priorityFilter);
-    }
+    let result = [...currentTests];
 
     // Apply search filter
     if (search) {
@@ -112,7 +112,26 @@ export function TCReviewPage() {
     });
 
     return result;
-  }, [tests, search, sortBy, priorityFilter]);
+  }, [currentTests, search, sortBy]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredAndSortedTests.length / ITEMS_PER_PAGE);
+  const paginatedTests = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredAndSortedTests.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredAndSortedTests, currentPage]);
+
+  // Reset page when search/sort/view changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortBy, activeView]);
+
+  // Scroll to test list when page changes (but not on initial load)
+  useEffect(() => {
+    if (currentPage > 1) {
+      document.getElementById('test-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [currentPage]);
 
   const handleRefresh = async () => {
     if (!activeProject || !isConfigured) return;
@@ -120,10 +139,15 @@ export function TCReviewPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await xrayApi.getTestsByStatus(activeProject, 'Under Review');
-      setTests(data);
+      const [underReviewData, draftData] = await Promise.all([
+        xrayApi.getTestsByStatus(activeProject, 'Under Review'),
+        xrayApi.getTestsByStatus(activeProject, 'Draft'),
+      ]);
+      setUnderReviewTests(underReviewData);
+      setXrayDraftTests(draftData);
+      setCurrentPage(1);
     } catch (err) {
-      console.error('Failed to fetch tests under review:', err);
+      console.error('Failed to fetch tests:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
@@ -140,7 +164,7 @@ export function TCReviewPage() {
   if (!isConfigured) {
     return (
       <div className="space-y-6 max-w-6xl mx-auto px-4 py-6">
-        <Header count={0} />
+        <Header />
         <Card className="text-center py-12">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-warning/10 flex items-center justify-center">
             <svg className="w-8 h-8 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -160,7 +184,7 @@ export function TCReviewPage() {
   if (!activeProject) {
     return (
       <div className="space-y-6 max-w-6xl mx-auto px-4 py-6">
-        <Header count={0} />
+        <Header />
         <Card className="text-center py-12">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-accent/10 flex items-center justify-center">
             <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -179,45 +203,51 @@ export function TCReviewPage() {
   return (
     <div className="space-y-6 max-w-6xl mx-auto px-4 py-6">
       {/* Header */}
-      <Header count={loading ? undefined : tests.length} />
+      <Header />
 
       {/* Stats Cards */}
-      {!loading && tests.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+      {!loading && (
+        <div className="grid grid-cols-3 gap-3 max-w-2xl">
           <StatCard
-            label="Total"
-            value={priorityStats.total}
+            label="Under Review"
+            subtitle="Xray Status"
+            value={stats.underReview}
             color="#3B82F6"
-            isActive={priorityFilter === 'all'}
-            onClick={() => setPriorityFilter('all')}
+            isActive={activeView === 'underReview'}
+            icon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            }
+            onClick={() => setActiveView('underReview')}
+            tooltip="View Under Review tests"
           />
           <StatCard
-            label="Highest"
-            value={priorityStats.Highest}
-            color={PRIORITY_COLORS.Highest}
-            isActive={priorityFilter === 'Highest'}
-            onClick={() => setPriorityFilter(priorityFilter === 'Highest' ? 'all' : 'Highest')}
+            label="Draft"
+            subtitle="Xray Status"
+            value={stats.xrayDraft}
+            color="#F97316"
+            isActive={activeView === 'xrayDraft'}
+            icon={
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.571 11.513H0a5.218 5.218 0 005.232 5.215h2.13v2.057A5.215 5.215 0 0012.574 24V12.518a1.005 1.005 0 00-1.003-1.005zm5.723-5.756H5.736a5.215 5.215 0 005.215 5.214h2.129v2.058a5.218 5.218 0 005.215 5.214V6.758a1.001 1.001 0 00-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 005.215 5.215h2.129v2.057A5.215 5.215 0 0024 12.483V1.005A1.001 1.001 0 0023.013 0z"/>
+              </svg>
+            }
+            onClick={() => setActiveView('xrayDraft')}
+            tooltip="View Draft tests"
           />
           <StatCard
-            label="High"
-            value={priorityStats.High}
-            color={PRIORITY_COLORS.High}
-            isActive={priorityFilter === 'High'}
-            onClick={() => setPriorityFilter(priorityFilter === 'High' ? 'all' : 'High')}
-          />
-          <StatCard
-            label="Medium"
-            value={priorityStats.Medium}
-            color={PRIORITY_COLORS.Medium}
-            isActive={priorityFilter === 'Medium'}
-            onClick={() => setPriorityFilter(priorityFilter === 'Medium' ? 'all' : 'Medium')}
-          />
-          <StatCard
-            label="Low"
-            value={priorityStats.Low + priorityStats.Lowest}
-            color={PRIORITY_COLORS.Low}
-            isActive={priorityFilter === 'Low' || priorityFilter === 'Lowest'}
-            onClick={() => setPriorityFilter(priorityFilter === 'Low' ? 'all' : 'Low')}
+            label="Draft"
+            subtitle="RayDrop Local"
+            value={stats.localDraft}
+            color="#F59E0B"
+            icon={
+              <svg className="w-5 h-5" viewBox="0 0 64 64" fill="none">
+                <path d="M32 12C32 12 16 30 16 42C16 50.837 23.163 58 32 58C40.837 58 48 50.837 48 42C48 30 32 12 32 12Z" fill="currentColor"/>
+              </svg>
+            }
+            onClick={() => navigate('/test-cases?status=draft')}
+            tooltip="View in Test Cases"
           />
         </div>
       )}
@@ -294,33 +324,65 @@ export function TCReviewPage() {
       {/* Empty State */}
       {!loading && !error && filteredAndSortedTests.length === 0 && (
         <Card className="text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-500/10 flex items-center justify-center">
-            <svg className="w-8 h-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: activeView === 'underReview' ? '#3B82F610' : '#F9731610' }}
+          >
+            <svg
+              className="w-8 h-8"
+              style={{ color: activeView === 'underReview' ? '#3B82F6' : '#F97316' }}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
           </div>
-          {tests.length === 0 ? (
+          {currentTests.length === 0 ? (
             <>
-              <h3 className="text-lg font-medium text-text-primary mb-2">No Tests Under Review</h3>
+              <h3 className="text-lg font-medium text-text-primary mb-2">
+                No {activeView === 'underReview' ? 'Tests Under Review' : 'Draft Tests'}
+              </h3>
               <p className="text-text-muted">
-                There are no tests with "Under Review" status in project {activeProject}.
+                There are no tests with "{activeView === 'underReview' ? 'Under Review' : 'Draft'}" status in project {activeProject}.
               </p>
             </>
           ) : (
             <>
               <h3 className="text-lg font-medium text-text-primary mb-2">No Results</h3>
               <p className="text-text-muted">
-                No tests match your search or filter criteria.
+                No tests match your search criteria.
               </p>
             </>
           )}
         </Card>
       )}
 
+      {/* View Header */}
+      {!loading && !error && currentTests.length > 0 && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+            {activeView === 'underReview' ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                Tests Under Review
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-orange-500" />
+                Draft Tests (Xray)
+              </>
+            )}
+            <span className="text-sm font-normal text-text-muted">
+              ({filteredAndSortedTests.length})
+            </span>
+          </h2>
+        </div>
+      )}
+
       {/* Test List */}
-      {!loading && !error && filteredAndSortedTests.length > 0 && (
-        <div className="grid gap-3">
-          {filteredAndSortedTests.map(test => (
+      {!loading && !error && paginatedTests.length > 0 && (
+        <div id="test-list" className="grid gap-3">
+          {paginatedTests.map(test => (
             <TestCard
               key={test.issueId}
               test={test}
@@ -332,12 +394,35 @@ export function TCReviewPage() {
         </div>
       )}
 
+      {/* Pagination */}
+      {!loading && !error && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card hover:bg-sidebar-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Previous
+          </button>
+          <div className="flex items-center gap-1">
+            <PaginationNumbers currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+          </div>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card hover:bg-sidebar-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
       {/* Summary */}
-      {!loading && tests.length > 0 && (
+      {!loading && currentTests.length > 0 && (
         <p className="text-sm text-text-muted text-center">
-          {filteredAndSortedTests.length !== tests.length
-            ? `Showing ${filteredAndSortedTests.length} of ${tests.length} tests under review`
-            : `${tests.length} test${tests.length !== 1 ? 's' : ''} under review in ${activeProject}`}
+          {filteredAndSortedTests.length !== currentTests.length
+            ? `Showing ${filteredAndSortedTests.length} of ${currentTests.length} ${activeView === 'underReview' ? 'under review' : 'draft'} tests`
+            : `${currentTests.length} ${activeView === 'underReview' ? 'under review' : 'draft'} test${currentTests.length !== 1 ? 's' : ''} in ${activeProject}`}
         </p>
       )}
     </div>
@@ -345,7 +430,7 @@ export function TCReviewPage() {
 }
 
 // Header component
-function Header({ count }: { count?: number }) {
+function Header() {
   return (
     <div className="flex items-center gap-3">
       <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-blue-500/20 text-blue-500">
@@ -354,14 +439,7 @@ function Header({ count }: { count?: number }) {
         </svg>
       </div>
       <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold text-text-primary">TC Review</h1>
-          {count !== undefined && (
-            <span className="px-2 py-0.5 text-sm font-medium rounded-full bg-blue-500/20 text-blue-500">
-              {count}
-            </span>
-          )}
-        </div>
+        <h1 className="text-2xl font-bold text-text-primary">TC Review</h1>
         <p className="text-sm text-text-muted">Tests awaiting review</p>
       </div>
     </div>
@@ -371,33 +449,47 @@ function Header({ count }: { count?: number }) {
 // Stat card component
 function StatCard({
   label,
+  subtitle,
   value,
   color,
-  isActive,
+  icon,
   onClick,
+  tooltip,
+  isActive,
 }: {
   label: string;
+  subtitle?: string;
   value: number;
   color: string;
-  isActive: boolean;
-  onClick: () => void;
+  icon?: React.ReactNode;
+  onClick?: () => void;
+  tooltip?: string;
+  isActive?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`p-4 rounded-lg border transition-all ${
-        isActive
-          ? 'ring-2 ring-offset-2 ring-offset-card'
-          : 'hover:bg-sidebar-hover/50'
+      title={tooltip}
+      className={`p-4 rounded-lg border relative overflow-hidden text-left transition-all hover:scale-[1.02] hover:shadow-md cursor-pointer ${
+        isActive ? 'ring-2 ring-offset-2 ring-offset-background' : ''
       }`}
       style={{
-        borderColor: isActive ? color : 'var(--border)',
+        borderColor: isActive ? color : `${color}40`,
         backgroundColor: isActive ? `${color}10` : 'var(--card)',
-        ...(isActive ? { ['--tw-ring-color' as string]: color } : {}),
+        ['--tw-ring-color' as string]: color,
       }}
     >
-      <div className="text-2xl font-bold" style={{ color }}>{value}</div>
-      <div className="text-xs text-text-muted">{label}</div>
+      {icon && (
+        <div
+          className="absolute top-2 right-2 opacity-20"
+          style={{ color }}
+        >
+          {icon}
+        </div>
+      )}
+      <div className="text-3xl font-bold" style={{ color }}>{value}</div>
+      <div className="text-sm font-medium text-text-primary">{label}</div>
+      {subtitle && <div className="text-xs text-text-muted">{subtitle}</div>}
     </button>
   );
 }
@@ -505,6 +597,74 @@ function TestCard({
         </div>
       </button>
     </Card>
+  );
+}
+
+// Smart pagination numbers with ellipsis
+function PaginationNumbers({
+  currentPage,
+  totalPages,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  const getPageNumbers = () => {
+    const pages: (number | 'ellipsis')[] = [];
+
+    if (totalPages <= 7) {
+      // Show all pages if 7 or fewer
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      // Always show first page
+      pages.push(1);
+
+      if (currentPage > 3) {
+        pages.push('ellipsis');
+      }
+
+      // Show pages around current page
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+
+      for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) pages.push(i);
+      }
+
+      if (currentPage < totalPages - 2) {
+        pages.push('ellipsis');
+      }
+
+      // Always show last page
+      if (!pages.includes(totalPages)) pages.push(totalPages);
+    }
+
+    return pages;
+  };
+
+  return (
+    <>
+      {getPageNumbers().map((page, idx) =>
+        page === 'ellipsis' ? (
+          <span key={`ellipsis-${idx}`} className="px-2 text-text-muted">
+            ...
+          </span>
+        ) : (
+          <button
+            key={page}
+            onClick={() => onPageChange(page)}
+            className={`w-8 h-8 text-sm rounded-lg transition-colors ${
+              currentPage === page
+                ? 'bg-accent text-white'
+                : 'hover:bg-sidebar-hover text-text-secondary'
+            }`}
+          >
+            {page}
+          </button>
+        )
+      )}
+    </>
   );
 }
 

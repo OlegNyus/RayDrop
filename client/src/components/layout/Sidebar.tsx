@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import { ProjectSelector } from '../ui';
-import { draftsApi } from '../../services/api';
+import { draftsApi, xrayApi } from '../../services/api';
 import type { Draft } from '../../types';
 
 interface NavItemConfig {
@@ -35,6 +35,10 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [draftCounts, setDraftCounts] = useState<Record<string, number>>({});
+  const [reviewCounts, setReviewCounts] = useState<{ underReview: number; xrayDraft: number }>({
+    underReview: 0,
+    xrayDraft: 0,
+  });
 
   const visibleProjects = settings?.projects.filter(
     p => !settings.hiddenProjects.includes(p)
@@ -67,6 +71,30 @@ export function Sidebar() {
     };
     loadDraftCounts();
   }, [activeProject]); // Refresh when project changes
+
+  // Fetch review counts from Xray
+  useEffect(() => {
+    if (!activeProject || !isConfigured) {
+      setReviewCounts({ underReview: 0, xrayDraft: 0 });
+      return;
+    }
+
+    const loadReviewCounts = async () => {
+      try {
+        const [underReviewTests, draftTests] = await Promise.all([
+          xrayApi.getTestsByStatus(activeProject, 'Under Review'),
+          xrayApi.getTestsByStatus(activeProject, 'Draft'),
+        ]);
+        setReviewCounts({
+          underReview: underReviewTests.length,
+          xrayDraft: draftTests.length,
+        });
+      } catch (err) {
+        console.error('Failed to load review counts:', err);
+      }
+    };
+    loadReviewCounts();
+  }, [activeProject, isConfigured]);
 
   return (
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -149,9 +177,7 @@ export function Sidebar() {
           <p className="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
             Test Review
           </p>
-          {reviewNavItems.map(item => (
-            <SidebarLink key={item.path} item={item} />
-          ))}
+          <TCReviewLink reviewCounts={reviewCounts} />
         </div>
       </nav>
 
@@ -217,15 +243,15 @@ function SidebarLink({
   isEditPage?: boolean;
 }) {
   const location = useLocation();
-  
+
   // Special handling for "Create Test Case" - don't highlight when on edit page
   const isCreateLink = item.path === '/test-cases/new';
-  
+
   // Custom active check
   const isActive = isCreateLink
     ? location.pathname === item.path && !isEditPage
-    : location.pathname === item.path || 
-      (item.path === '/test-cases' && location.pathname.startsWith('/test-cases') && 
+    : location.pathname === item.path ||
+      (item.path === '/test-cases' && location.pathname.startsWith('/test-cases') &&
        !location.pathname.includes('/new') && !location.pathname.includes('/edit'));
 
   return (
@@ -239,6 +265,49 @@ function SidebarLink({
     >
       <span>{item.icon}</span>
       <span>{item.label}</span>
+    </NavLink>
+  );
+}
+
+function TCReviewLink({
+  reviewCounts,
+}: {
+  reviewCounts: { underReview: number; xrayDraft: number };
+}) {
+  const location = useLocation();
+  const isActive = location.pathname === '/tc-review';
+
+  return (
+    <NavLink
+      to="/tc-review"
+      className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
+        isActive
+          ? 'bg-accent text-white'
+          : 'text-text-secondary hover:bg-sidebar-hover hover:text-text-primary'
+      }`}
+    >
+      <span>🔍</span>
+      <span className="flex-1">TC Review</span>
+      {(reviewCounts.underReview > 0 || reviewCounts.xrayDraft > 0) && (
+        <div className="flex items-center gap-1">
+          {reviewCounts.underReview > 0 && (
+            <span
+              className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700"
+              title="Under Review"
+            >
+              {reviewCounts.underReview}
+            </span>
+          )}
+          {reviewCounts.xrayDraft > 0 && (
+            <span
+              className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700"
+              title="Draft"
+            >
+              {reviewCounts.xrayDraft}
+            </span>
+          )}
+        </div>
+      )}
     </NavLink>
   );
 }
