@@ -96,12 +96,16 @@ export function Dashboard() {
   // Calculate workflow progress (imported / total)
   const progressPercent = total > 0 ? Math.round((stats.imported / total) * 100) : 0;
 
+  // Reset execution state when project changes
+  useEffect(() => {
+    setTestExecutions([]);
+    setSelectedExecutionId(null);
+    setExecutionStatus(null);
+  }, [activeProject]);
+
   // Fetch test executions when project changes
   useEffect(() => {
     if (!activeProject || !isConfigured) {
-      setTestExecutions([]);
-      setSelectedExecutionId(null);
-      setExecutionStatus(null);
       return;
     }
 
@@ -111,11 +115,12 @@ export function Dashboard() {
         const data = await xrayApi.getTestExecutions(activeProject);
         setTestExecutions(data);
         // Auto-select first execution if available
-        if (data.length > 0 && !selectedExecutionId) {
+        if (data.length > 0) {
           setSelectedExecutionId(data[0].issueId);
         }
       } catch (err) {
         console.error('Failed to fetch test executions:', err);
+        setTestExecutions([]);
       } finally {
         setLoadingExecutions(false);
       }
