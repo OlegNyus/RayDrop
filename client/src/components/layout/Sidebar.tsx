@@ -3,7 +3,8 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import { ProjectSelector } from '../ui';
-import { draftsApi, xrayApi } from '../../services/api';
+import { draftsApi } from '../../services/api';
+import { SIDEBAR_BADGE_COLORS } from '../../constants/colors';
 import type { Draft } from '../../types';
 
 interface NavItemConfig {
@@ -30,15 +31,11 @@ const xrayNavItems: NavItemConfig[] = [
 ];
 
 export function Sidebar() {
-  const { settings, activeProject, setActiveProject, isConfigured } = useApp();
+  const { settings, activeProject, setActiveProject, isConfigured, reviewCounts } = useApp();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [draftCounts, setDraftCounts] = useState<Record<string, number>>({});
-  const [reviewCounts, setReviewCounts] = useState<{ underReview: number; xrayDraft: number }>({
-    underReview: 0,
-    xrayDraft: 0,
-  });
 
   const visibleProjects = settings?.projects.filter(
     p => !settings.hiddenProjects.includes(p)
@@ -71,30 +68,6 @@ export function Sidebar() {
     };
     loadDraftCounts();
   }, [activeProject]); // Refresh when project changes
-
-  // Fetch review counts from Xray
-  useEffect(() => {
-    if (!activeProject || !isConfigured) {
-      setReviewCounts({ underReview: 0, xrayDraft: 0 });
-      return;
-    }
-
-    const loadReviewCounts = async () => {
-      try {
-        const [underReviewTests, draftTests] = await Promise.all([
-          xrayApi.getTestsByStatus(activeProject, 'Under Review'),
-          xrayApi.getTestsByStatus(activeProject, 'Draft'),
-        ]);
-        setReviewCounts({
-          underReview: underReviewTests.length,
-          xrayDraft: draftTests.length,
-        });
-      } catch (err) {
-        console.error('Failed to load review counts:', err);
-      }
-    };
-    loadReviewCounts();
-  }, [activeProject, isConfigured]);
 
   return (
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -292,7 +265,7 @@ function TCReviewLink({
         <div className="flex items-center gap-1">
           {reviewCounts.underReview > 0 && (
             <span
-              className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700"
+              className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${SIDEBAR_BADGE_COLORS.underReview.bg} ${SIDEBAR_BADGE_COLORS.underReview.text}`}
               title="Under Review"
             >
               {reviewCounts.underReview}
@@ -300,7 +273,7 @@ function TCReviewLink({
           )}
           {reviewCounts.xrayDraft > 0 && (
             <span
-              className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700"
+              className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${SIDEBAR_BADGE_COLORS.xrayDraft.bg} ${SIDEBAR_BADGE_COLORS.xrayDraft.text}`}
               title="Draft"
             >
               {reviewCounts.xrayDraft}

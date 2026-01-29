@@ -1,6 +1,16 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import type { Settings, Draft, Config } from '../types';
-import { settingsApi, draftsApi, configApi } from '../services/api';
+import type { Settings, Draft, Config, TestWithDetails } from '../types';
+import { settingsApi, draftsApi, configApi, xrayApi } from '../services/api';
+
+export interface ReviewCounts {
+  underReview: number;
+  xrayDraft: number;
+}
+
+export interface ReviewTests {
+  underReview: TestWithDetails[];
+  xrayDraft: TestWithDetails[];
+}
 
 interface AppContextType {
   // Config
@@ -21,6 +31,12 @@ interface AppContextType {
   drafts: Draft[];
   refreshDrafts: () => Promise<void>;
 
+  // Review data (shared between Sidebar and TC Review page)
+  reviewCounts: ReviewCounts;
+  reviewTests: ReviewTests;
+  reviewTestsLoading: boolean;
+  refreshReviewCounts: () => Promise<void>;
+
   // Loading
   isLoading: boolean;
 }
@@ -31,6 +47,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<Config | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [reviewCounts, setReviewCounts] = useState<ReviewCounts>({ underReview: 0, xrayDraft: 0 });
+  const [reviewTests, setReviewTests] = useState<ReviewTests>({ underReview: [], xrayDraft: [] });
+  const [reviewTestsLoading, setReviewTestsLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
 
@@ -67,6 +86,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [settings?.activeProject]);
 
+  const refreshReviewCounts = useCallback(async () => {
+    const projectKey = settings?.activeProject;
+    const isConfigured = config?.configured ?? false;
+
+    if (!projectKey || !isConfigured) {
+      setReviewCounts({ underReview: 0, xrayDraft: 0 });
+      setReviewTests({ underReview: [], xrayDraft: [] });
+      return;
+    }
+
+    setReviewTestsLoading(true);
+    try {
+      const [underReviewData, draftData] = await Promise.all([
+        xrayApi.getTestsByStatus(projectKey, 'Under Review'),
+        xrayApi.getTestsByStatus(projectKey, 'Draft'),
+      ]);
+      setReviewTests({
+        underReview: underReviewData,
+        xrayDraft: draftData,
+      });
+      setReviewCounts({
+        underReview: underReviewData.length,
+        xrayDraft: draftData.length,
+      });
+    } catch (error) {
+      console.error('Failed to load review counts:', error);
+    } finally {
+      setReviewTestsLoading(false);
+    }
+  }, [settings?.activeProject, config?.configured]);
+
   const setActiveProject = useCallback(async (projectKey: string) => {
     try {
       await settingsApi.setActiveProject(projectKey);
@@ -88,8 +138,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (settings?.activeProject) {
       refreshDrafts();
+      refreshReviewCounts();
     }
-  }, [settings?.activeProject, refreshDrafts]);
+  }, [settings?.activeProject, refreshDrafts, refreshReviewCounts]);
 
   const value: AppContextType = {
     config,
@@ -104,6 +155,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshSettings,
     drafts,
     refreshDrafts,
+    reviewCounts,
+    reviewTests,
+    reviewTestsLoading,
+    refreshReviewCounts,
     isLoading,
   };
 

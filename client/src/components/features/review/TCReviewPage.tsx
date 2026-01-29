@@ -1,35 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
-import { xrayApi } from '../../../services/api';
 import { Card, Input } from '../../ui';
-import type { TestWithDetails } from '../../../types';
+import { PRIORITY_COLORS, PRIORITY_ORDER, REVIEW_COLORS } from '../../../constants/colors';
 
 type SortOption = 'created-desc' | 'created-asc' | 'priority' | 'key';
 
-const PRIORITY_COLORS: Record<string, string> = {
-  Highest: '#DC2626', // red-600
-  High: '#EA580C',    // orange-600
-  Medium: '#F59E0B',  // amber-500
-  Low: '#22C55E',     // green-500
-  Lowest: '#6B7280',  // gray-500
-};
-
-const PRIORITY_ORDER: Record<string, number> = {
-  Highest: 0,
-  High: 1,
-  Medium: 2,
-  Low: 3,
-  Lowest: 4,
-};
-
 export function TCReviewPage() {
-  const { activeProject, isConfigured, config, drafts } = useApp();
+  const { activeProject, isConfigured, config, drafts, reviewTests, reviewTestsLoading, refreshReviewCounts } = useApp();
   const navigate = useNavigate();
-  const [underReviewTests, setUnderReviewTests] = useState<TestWithDetails[]>([]);
-  const [xrayDraftTests, setXrayDraftTests] = useState<TestWithDetails[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('created-desc');
   const [activeView, setActiveView] = useState<'underReview' | 'xrayDraft'>('underReview');
@@ -38,37 +17,10 @@ export function TCReviewPage() {
 
   const jiraBaseUrl = config?.jiraBaseUrl;
 
-  // Fetch tests under review and draft when project changes
-  useEffect(() => {
-    if (!activeProject || !isConfigured) {
-      setUnderReviewTests([]);
-      setXrayDraftTests([]);
-      return;
-    }
-
-    const fetchTests = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Fetch both Under Review and Draft tests from Xray in parallel
-        const [underReviewData, draftData] = await Promise.all([
-          xrayApi.getTestsByStatus(activeProject, 'Under Review'),
-          xrayApi.getTestsByStatus(activeProject, 'Draft'),
-        ]);
-        setUnderReviewTests(underReviewData);
-        setXrayDraftTests(draftData);
-        setActiveView('underReview');
-        setCurrentPage(1);
-      } catch (err) {
-        console.error('Failed to fetch tests:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTests();
-  }, [activeProject, isConfigured]);
+  // Use shared data from context
+  const underReviewTests = reviewTests.underReview;
+  const xrayDraftTests = reviewTests.xrayDraft;
+  const loading = reviewTestsLoading;
 
   // Stats - tests under review, Xray drafts, and local RayDrop drafts
   const stats = useMemo(() => {
@@ -126,32 +78,25 @@ export function TCReviewPage() {
     setCurrentPage(1);
   }, [search, sortBy, activeView]);
 
-  // Scroll to test list when page changes (but not on initial load)
+  // Track if user has interacted with pagination
+  const [hasInteracted, setHasInteracted] = useState(false);
+
+  // Scroll to test list when page changes (after user interaction)
   useEffect(() => {
-    if (currentPage > 1) {
+    if (hasInteracted) {
       document.getElementById('test-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  }, [currentPage]);
+  }, [currentPage, hasInteracted]);
+
+  const handlePageChange = (page: number) => {
+    setHasInteracted(true);
+    setCurrentPage(page);
+  };
 
   const handleRefresh = async () => {
     if (!activeProject || !isConfigured) return;
-
-    setLoading(true);
-    setError(null);
-    try {
-      const [underReviewData, draftData] = await Promise.all([
-        xrayApi.getTestsByStatus(activeProject, 'Under Review'),
-        xrayApi.getTestsByStatus(activeProject, 'Draft'),
-      ]);
-      setUnderReviewTests(underReviewData);
-      setXrayDraftTests(draftData);
-      setCurrentPage(1);
-    } catch (err) {
-      console.error('Failed to fetch tests:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
-    } finally {
-      setLoading(false);
-    }
+    await refreshReviewCounts();
+    setCurrentPage(1);
   };
 
   // Format date for display
@@ -212,7 +157,7 @@ export function TCReviewPage() {
             label="Under Review"
             subtitle="Xray Status"
             value={stats.underReview}
-            color="#3B82F6"
+            color={REVIEW_COLORS.underReview}
             isActive={activeView === 'underReview'}
             icon={
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -226,7 +171,7 @@ export function TCReviewPage() {
             label="Draft"
             subtitle="Xray Status"
             value={stats.xrayDraft}
-            color="#F97316"
+            color={REVIEW_COLORS.xrayDraft}
             isActive={activeView === 'xrayDraft'}
             icon={
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -240,7 +185,7 @@ export function TCReviewPage() {
             label="Draft"
             subtitle="RayDrop Local"
             value={stats.localDraft}
-            color="#F59E0B"
+            color={REVIEW_COLORS.localDraft}
             icon={
               <svg className="w-5 h-5" viewBox="0 0 64 64" fill="none">
                 <path d="M32 12C32 12 16 30 16 42C16 50.837 23.163 58 32 58C40.837 58 48 50.837 48 42C48 30 32 12 32 12Z" fill="currentColor"/>
@@ -292,26 +237,6 @@ export function TCReviewPage() {
         </div>
       </Card>
 
-      {/* Error State */}
-      {error && (
-        <Card className="border-error/50 bg-error/5">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-error flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div className="flex-1">
-              <p className="text-sm text-error">{error}</p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              className="text-sm text-error hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </Card>
-      )}
-
       {/* Loading State */}
       {loading && (
         <div className="grid gap-3">
@@ -322,14 +247,14 @@ export function TCReviewPage() {
       )}
 
       {/* Empty State */}
-      {!loading && !error && filteredAndSortedTests.length === 0 && (
+      {!loading && filteredAndSortedTests.length === 0 && (
         <Card className="text-center py-12">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: activeView === 'underReview' ? '#3B82F610' : '#F9731610' }}
+            style={{ backgroundColor: `${activeView === 'underReview' ? REVIEW_COLORS.underReview : REVIEW_COLORS.xrayDraft}10` }}
           >
             <svg
               className="w-8 h-8"
-              style={{ color: activeView === 'underReview' ? '#3B82F6' : '#F97316' }}
+              style={{ color: activeView === 'underReview' ? REVIEW_COLORS.underReview : REVIEW_COLORS.xrayDraft }}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -358,7 +283,7 @@ export function TCReviewPage() {
       )}
 
       {/* View Header */}
-      {!loading && !error && currentTests.length > 0 && (
+      {!loading && currentTests.length > 0 && (
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
             {activeView === 'underReview' ? (
@@ -380,7 +305,7 @@ export function TCReviewPage() {
       )}
 
       {/* Test List */}
-      {!loading && !error && paginatedTests.length > 0 && (
+      {!loading && paginatedTests.length > 0 && (
         <div id="test-list" className="grid gap-3">
           {paginatedTests.map(test => (
             <TestCard
@@ -395,20 +320,20 @@ export function TCReviewPage() {
       )}
 
       {/* Pagination */}
-      {!loading && !error && totalPages > 1 && (
+      {!loading && totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <button
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
             disabled={currentPage === 1}
             className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card hover:bg-sidebar-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Previous
           </button>
           <div className="flex items-center gap-1">
-            <PaginationNumbers currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+            <PaginationNumbers currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
           </div>
           <button
-            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
             disabled={currentPage === totalPages}
             className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card hover:bg-sidebar-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
