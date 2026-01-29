@@ -24,6 +24,7 @@ import {
   getTestDetails,
   getPreconditionDetails,
   getTestExecutionStatusSummary,
+  getTestsByStatus,
 } from '../utils/xrayClient.js';
 import { readDraft, writeDraft } from '../utils/fileOperations.js';
 import type { Draft } from '../types.js';
@@ -484,6 +485,45 @@ router.get('/test-execution/:issueId/status', async (req: Request, res: Response
   } catch (error) {
     console.error('Error fetching test execution status:', error);
     return res.status(500).json({ error: 'Failed to fetch test execution status' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/tests/by-status/{projectKey}:
+ *   get:
+ *     summary: Get tests by Jira workflow status
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: projectKey
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Jira workflow status (e.g., "Under Review")
+ *     responses:
+ *       200:
+ *         description: List of tests with the specified status
+ */
+router.get('/tests/by-status/:projectKey', async (req: Request, res: Response) => {
+  try {
+    const { projectKey } = req.params;
+    const status = req.query.status as string;
+
+    if (!status) {
+      return res.status(400).json({ error: 'status query parameter is required' });
+    }
+
+    const tests = await getTestsByStatus(projectKey, status);
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests by status:', error);
+    return res.status(500).json({ error: 'Failed to fetch tests by status' });
   }
 });
 

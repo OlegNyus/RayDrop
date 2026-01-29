@@ -18,6 +18,10 @@ const mainNavItems: NavItemConfig[] = [
   { path: '/test-cases/new', label: 'Create Test Case', icon: '➕' },
 ];
 
+const reviewNavItems: NavItemConfig[] = [
+  { path: '/tc-review', label: 'TC Review', icon: '🔍' },
+];
+
 const xrayNavItems: NavItemConfig[] = [
   { path: '/test-sets', label: 'Test Sets', icon: '📁' },
   { path: '/test-plans', label: 'Test Plans', icon: '📅' },
@@ -102,6 +106,15 @@ export function Sidebar() {
             Xray Entities
           </p>
           {xrayNavItems.map(item => (
+            <SidebarLink key={item.path} item={item} />
+          ))}
+        </div>
+
+        <div className="pt-4 border-t border-sidebar-border">
+          <p className="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
+            Test Review
+          </p>
+          {reviewNavItems.map(item => (
             <SidebarLink key={item.path} item={item} />
           ))}
         </div>
