@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { xrayApi } from '../../../services/api';
-import { Card, Button } from '../../ui';
+import { Card, Button, CodeBlock } from '../../ui';
+import { detectCode } from '../../../utils/codeDetection';
 
 // Parse Jira wiki markup links [text|url] and plain URLs into clickable links
 function parseJiraMarkup(text: string): React.ReactNode[] {
@@ -217,45 +218,64 @@ export function XrayTestView() {
         ) : (
           <div className="space-y-4">
             {test.steps.map((step, index) => (
-              <div
-                key={step.id}
-                className="border border-border rounded-lg overflow-hidden"
-              >
-                {/* Step header */}
-                <div className="flex items-center gap-3 px-4 py-2 bg-sidebar/50 border-b border-border">
-                  <span className="w-6 h-6 flex items-center justify-center rounded-full bg-accent text-white text-sm font-medium">
-                    {index + 1}
-                  </span>
-                  <span className="text-sm font-medium text-text-primary">Step {index + 1}</span>
-                </div>
-
-                {/* Step content */}
-                <div className="p-4 space-y-3">
-                  {/* Action */}
-                  <div>
-                    <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Action</p>
-                    <p className="text-text-primary whitespace-pre-wrap">{step.action || '-'}</p>
-                  </div>
-
-                  {/* Data */}
-                  {step.data && (
-                    <div>
-                      <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Data</p>
-                      <p className="text-text-secondary whitespace-pre-wrap">{step.data}</p>
-                    </div>
-                  )}
-
-                  {/* Expected Result */}
-                  <div>
-                    <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Expected Result</p>
-                    <p className="text-text-primary whitespace-pre-wrap">{step.result || '-'}</p>
-                  </div>
-                </div>
-              </div>
+              <StepCard key={step.id} step={step} index={index} />
             ))}
           </div>
         )}
       </Card>
     </div>
   );
+}
+
+// Step card component
+function StepCard({ step, index }: { step: { id: string; action: string; data: string; result: string }; index: number }) {
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      {/* Step header */}
+      <div className="flex items-center gap-3 px-4 py-2 bg-sidebar/50 border-b border-border">
+        <span className="w-6 h-6 flex items-center justify-center rounded-full bg-accent text-white text-sm font-medium">
+          {index + 1}
+        </span>
+        <span className="text-sm font-medium text-text-primary">Step {index + 1}</span>
+      </div>
+
+      {/* Step content */}
+      <div className="p-4 space-y-3">
+        {/* Action */}
+        <div>
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Action</p>
+          <p className="text-text-primary whitespace-pre-wrap">{step.action || '-'}</p>
+        </div>
+
+        {/* Data */}
+        {step.data && (
+          <div>
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Data</p>
+            <TestDataDisplay data={step.data} />
+          </div>
+        )}
+
+        {/* Expected Result */}
+        <div>
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Expected Result</p>
+          <p className="text-text-primary whitespace-pre-wrap">{step.result || '-'}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Test data display component - handles both raw code and Xray wiki format
+function TestDataDisplay({ data }: { data: string }) {
+  // Strip Xray wiki code format if present: {code:lang}...{code}
+  const wikiCodeMatch = data.match(/^\{code(?::(\w+))?\}\n?([\s\S]*?)\n?\{code\}$/);
+  const cleanData = wikiCodeMatch ? wikiCodeMatch[2] : data;
+
+  const { isCode } = detectCode(cleanData);
+
+  if (isCode || wikiCodeMatch) {
+    return <CodeBlock code={cleanData} />;
+  }
+
+  return <p className="text-text-secondary whitespace-pre-wrap">{data}</p>;
 }

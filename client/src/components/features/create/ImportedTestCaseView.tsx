@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, StatusBadge, TestKeyLink, ConfirmModal } from '../../ui';
+import { Card, Button, StatusBadge, TestKeyLink, ConfirmModal, CodeBlock } from '../../ui';
 import { useApp } from '../../../context/AppContext';
 import { draftsApi } from '../../../services/api';
+import { detectCode } from '../../../utils/codeDetection';
 import type { Draft } from '../../../types';
 
 // Extract issue key from display text (e.g., "WCP-7067: Sprint 115 | Smoke" -> "WCP-7067")
@@ -163,7 +164,11 @@ export function ImportedTestCaseView({ draft }: ImportedTestCaseViewProps) {
                   {step.data && (
                     <div>
                       <label className="block text-xs font-medium text-text-muted mb-1">Test Data</label>
-                      <p className="text-text-primary">{step.data}</p>
+                      {detectCode(step.data).isCode ? (
+                        <CodeBlock code={step.data} />
+                      ) : (
+                        <p className="text-text-primary whitespace-pre-wrap">{step.data}</p>
+                      )}
                     </div>
                   )}
                   <div>

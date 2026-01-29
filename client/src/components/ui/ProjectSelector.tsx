@@ -97,7 +97,10 @@ export function ProjectSelector({
                 <button
                   key={project}
                   onClick={() => {
-                    onSelect(project);
+                    if (project !== activeProject) {
+                      onSelect(project);
+                      navigate('/dashboard');
+                    }
                     setIsOpen(false);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-sidebar-hover transition-colors ${

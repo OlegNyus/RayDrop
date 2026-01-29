@@ -12,3 +12,4 @@ export { SortableStepCard } from './SortableStepCard';
 export { TestKeyLink } from './TestKeyLink';
 export { ConfirmModal } from './ConfirmModal';
 export { ProjectSelector } from './ProjectSelector';
+export { CodeBlock } from './CodeBlock';
