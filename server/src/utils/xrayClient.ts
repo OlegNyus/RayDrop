@@ -295,7 +295,11 @@ async function executeGraphQL<T>(query: string, variables: Record<string, unknow
   return response.data.data as T;
 }
 
-export async function getTestPlans(projectKey: string): Promise<XrayEntity[]> {
+export interface TestPlanWithCount extends XrayEntity {
+  testCount: number;
+}
+
+export async function getTestPlans(projectKey: string): Promise<TestPlanWithCount[]> {
   const query = `
     query GetTestPlans($jql: String!, $limit: Int!) {
       getTestPlans(jql: $jql, limit: $limit) {
@@ -303,6 +307,9 @@ export async function getTestPlans(projectKey: string): Promise<XrayEntity[]> {
         results {
           issueId
           jira(fields: ["key", "summary"])
+          tests(limit: 1) {
+            total
+          }
         }
       }
     }
@@ -310,7 +317,11 @@ export async function getTestPlans(projectKey: string): Promise<XrayEntity[]> {
 
   interface Result {
     getTestPlans: {
-      results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      results: Array<{
+        issueId: string;
+        jira?: { key: string; summary: string };
+        tests?: { total: number };
+      }>;
     };
   }
 
@@ -323,6 +334,7 @@ export async function getTestPlans(projectKey: string): Promise<XrayEntity[]> {
     issueId: tp.issueId,
     key: tp.jira?.key || '',
     summary: tp.jira?.summary || '',
+    testCount: tp.tests?.total || 0,
   }));
 }
 
@@ -438,7 +450,11 @@ export async function getTestExecutions(projectKey: string): Promise<TestExecuti
   });
 }
 
-export async function getTestSets(projectKey: string): Promise<XrayEntity[]> {
+export interface TestSetWithCount extends XrayEntity {
+  testCount: number;
+}
+
+export async function getTestSets(projectKey: string): Promise<TestSetWithCount[]> {
   const query = `
     query GetTestSets($jql: String!, $limit: Int!) {
       getTestSets(jql: $jql, limit: $limit) {
@@ -446,6 +462,9 @@ export async function getTestSets(projectKey: string): Promise<XrayEntity[]> {
         results {
           issueId
           jira(fields: ["key", "summary"])
+          tests(limit: 1) {
+            total
+          }
         }
       }
     }
@@ -453,7 +472,11 @@ export async function getTestSets(projectKey: string): Promise<XrayEntity[]> {
 
   interface Result {
     getTestSets: {
-      results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      results: Array<{
+        issueId: string;
+        jira?: { key: string; summary: string };
+        tests?: { total: number };
+      }>;
     };
   }
 
@@ -466,6 +489,7 @@ export async function getTestSets(projectKey: string): Promise<XrayEntity[]> {
     issueId: ts.issueId,
     key: ts.jira?.key || '',
     summary: ts.jira?.summary || '',
+    testCount: ts.tests?.total || 0,
   }));
 }
 
@@ -734,7 +758,12 @@ export async function removePreconditionsFromTest(testIssueId: string, precondit
 
 // ============ Get Tests from Entities ============
 
-export async function getTestsFromTestSet(testSetId: string): Promise<XrayEntity[]> {
+export interface TestWithStatus extends XrayEntity {
+  status?: string;
+  statusColor?: string;
+}
+
+export async function getTestsFromTestSet(testSetId: string): Promise<TestWithStatus[]> {
   const query = `
     query GetTestSet($issueId: String!) {
       getTestSet(issueId: $issueId) {
@@ -742,7 +771,7 @@ export async function getTestsFromTestSet(testSetId: string): Promise<XrayEntity
           total
           results {
             issueId
-            jira(fields: ["key", "summary"])
+            jira(fields: ["key", "summary", "status"])
           }
         }
       }
@@ -753,20 +782,30 @@ export async function getTestsFromTestSet(testSetId: string): Promise<XrayEntity
     getTestSet: {
       tests: {
         total: number;
-        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+        results: Array<{
+          issueId: string;
+          jira?: {
+            key: string;
+            summary: string;
+            status?: { name: string; statusCategory?: { colorName?: string } };
+          };
+        }>;
       };
     };
   }
 
   const data = await executeGraphQL<Result>(query, { issueId: testSetId });
-  return data.getTestSet.tests.results.map((t) => ({
+  const results = data.getTestSet?.tests?.results || [];
+  return results.map((t) => ({
     issueId: t.issueId,
     key: t.jira?.key || '',
     summary: t.jira?.summary || '',
+    status: t.jira?.status?.name,
+    statusColor: getJiraStatusColor(t.jira?.status?.statusCategory?.colorName),
   }));
 }
 
-export async function getTestsFromTestPlan(testPlanId: string): Promise<XrayEntity[]> {
+export async function getTestsFromTestPlan(testPlanId: string): Promise<TestWithStatus[]> {
   const query = `
     query GetTestPlan($issueId: String!) {
       getTestPlan(issueId: $issueId) {
@@ -774,7 +813,7 @@ export async function getTestsFromTestPlan(testPlanId: string): Promise<XrayEnti
           total
           results {
             issueId
-            jira(fields: ["key", "summary"])
+            jira(fields: ["key", "summary", "status"])
           }
         }
       }
@@ -785,20 +824,30 @@ export async function getTestsFromTestPlan(testPlanId: string): Promise<XrayEnti
     getTestPlan: {
       tests: {
         total: number;
-        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+        results: Array<{
+          issueId: string;
+          jira?: {
+            key: string;
+            summary: string;
+            status?: { name: string; statusCategory?: { colorName?: string } };
+          };
+        }>;
       };
     };
   }
 
   const data = await executeGraphQL<Result>(query, { issueId: testPlanId });
-  return data.getTestPlan.tests.results.map((t) => ({
+  const results = data.getTestPlan?.tests?.results || [];
+  return results.map((t) => ({
     issueId: t.issueId,
     key: t.jira?.key || '',
     summary: t.jira?.summary || '',
+    status: t.jira?.status?.name,
+    statusColor: getJiraStatusColor(t.jira?.status?.statusCategory?.colorName),
   }));
 }
 
-export async function getTestsFromTestExecution(testExecutionId: string): Promise<XrayEntity[]> {
+export async function getTestsFromTestExecution(testExecutionId: string): Promise<TestWithStatus[]> {
   const query = `
     query GetTestExecution($issueId: String!) {
       getTestExecution(issueId: $issueId) {
@@ -806,6 +855,10 @@ export async function getTestsFromTestExecution(testExecutionId: string): Promis
           total
           results {
             issueId
+            status {
+              name
+              color
+            }
             jira(fields: ["key", "summary"])
           }
         }
@@ -817,7 +870,11 @@ export async function getTestsFromTestExecution(testExecutionId: string): Promis
     getTestExecution: {
       tests: {
         total: number;
-        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+        results: Array<{
+          issueId: string;
+          status?: { name: string; color?: string };
+          jira?: { key: string; summary: string };
+        }>;
       };
     };
   }
@@ -828,10 +885,12 @@ export async function getTestsFromTestExecution(testExecutionId: string): Promis
     issueId: t.issueId,
     key: t.jira?.key || '',
     summary: t.jira?.summary || '',
+    status: t.status?.name,
+    statusColor: t.status?.color,
   }));
 }
 
-export async function getTestsFromPrecondition(preconditionId: string): Promise<XrayEntity[]> {
+export async function getTestsFromPrecondition(preconditionId: string): Promise<TestWithStatus[]> {
   const query = `
     query GetPrecondition($issueId: String!) {
       getPrecondition(issueId: $issueId) {
@@ -839,7 +898,7 @@ export async function getTestsFromPrecondition(preconditionId: string): Promise<
           total
           results {
             issueId
-            jira(fields: ["key", "summary"])
+            jira(fields: ["key", "summary", "status"])
           }
         }
       }
@@ -850,16 +909,26 @@ export async function getTestsFromPrecondition(preconditionId: string): Promise<
     getPrecondition: {
       tests: {
         total: number;
-        results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+        results: Array<{
+          issueId: string;
+          jira?: {
+            key: string;
+            summary: string;
+            status?: { name: string; statusCategory?: { colorName?: string } };
+          };
+        }>;
       };
     };
   }
 
   const data = await executeGraphQL<Result>(query, { issueId: preconditionId });
-  return data.getPrecondition.tests.results.map((t) => ({
+  const results = data.getPrecondition?.tests?.results || [];
+  return results.map((t) => ({
     issueId: t.issueId,
     key: t.jira?.key || '',
     summary: t.jira?.summary || '',
+    status: t.jira?.status?.name,
+    statusColor: getJiraStatusColor(t.jira?.status?.statusCategory?.colorName),
   }));
 }
 
@@ -966,7 +1035,7 @@ export interface TestExecutionStatusSummary {
   statuses: TestRunStatus[];
 }
 
-// Status colors matching Xray's conventions
+// Status colors matching Xray's conventions for test run statuses
 const STATUS_COLORS: Record<string, string> = {
   PASS: '#22C55E',      // green
   PASSED: '#22C55E',
@@ -978,6 +1047,28 @@ const STATUS_COLORS: Record<string, string> = {
   BLOCKED: '#EC4899',   // pink
   PENDING: '#8B5CF6',   // purple
 };
+
+// Status colors for test case workflow statuses (Ready, Draft, etc.)
+const TC_STATUS_COLORS: Record<string, string> = {
+  READY: '#22C55E',           // green
+  DRAFT: '#F59E0B',           // amber
+  'UNDER REVIEW': '#3B82F6',  // blue
+  APPROVED: '#10B981',        // emerald
+  DEPRECATED: '#6B7280',      // gray
+  OBSOLETE: '#6B7280',        // gray
+  UNKNOWN: '#9CA3AF',         // light gray
+};
+
+// Map Jira status category colors to hex
+function getJiraStatusColor(colorName?: string): string {
+  const colorMap: Record<string, string> = {
+    'blue-gray': '#6B7280',   // To Do
+    'yellow': '#F59E0B',      // In Progress / Draft
+    'green': '#22C55E',       // Done / Ready
+    'medium-gray': '#9CA3AF', // Unknown
+  };
+  return colorMap[colorName || ''] || '#6B7280';
+}
 
 export async function getTestExecutionStatusSummary(issueId: string): Promise<TestExecutionStatusSummary> {
   // First get the test execution details

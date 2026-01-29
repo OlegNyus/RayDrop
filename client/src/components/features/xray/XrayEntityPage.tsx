@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { xrayApi } from '../../../services/api';
 import { Card, Input } from '../../ui';
-import type { XrayEntity, TestExecutionWithStatus } from '../../../types';
+import type { XrayEntity, TestExecutionWithStatus, TestSetWithCount, TestPlanWithCount, TestWithStatus } from '../../../types';
 
 interface XrayEntityPageProps {
   type: 'test-sets' | 'test-plans' | 'test-executions' | 'preconditions';
@@ -59,7 +59,7 @@ const CONFIG: Record<string, { title: string; singular: string; icon: React.Reac
 
 export function XrayEntityPage({ type }: XrayEntityPageProps) {
   const { activeProject, isConfigured, config } = useApp();
-  const [entities, setEntities] = useState<(XrayEntity | TestExecutionWithStatus)[]>([]);
+  const [entities, setEntities] = useState<(XrayEntity | TestExecutionWithStatus | TestSetWithCount | TestPlanWithCount)[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -67,6 +67,7 @@ export function XrayEntityPage({ type }: XrayEntityPageProps) {
 
   const { title, singular, icon, color, testsLabel } = CONFIG[type];
   const isTestExecutionPage = type === 'test-executions';
+  const isTestSetPage = type === 'test-sets';
 
   // Fetch entities when project changes
   useEffect(() => {
@@ -367,7 +368,7 @@ function EntityCard({
   isExpanded,
   onToggleExpand,
 }: {
-  entity: XrayEntity | TestExecutionWithStatus;
+  entity: XrayEntity | TestExecutionWithStatus | TestSetWithCount | TestPlanWithCount;
   type: string;
   singular: string;
   color: string;
@@ -378,18 +379,23 @@ function EntityCard({
   onToggleExpand: () => void;
 }) {
   const navigate = useNavigate();
-  const [tests, setTests] = useState<XrayEntity[]>([]);
+  const [tests, setTests] = useState<TestWithStatus[]>([]);
   const [loadingTests, setLoadingTests] = useState(false);
   const [testsError, setTestsError] = useState<string | null>(null);
 
   const jiraUrl = jiraBaseUrl ? `${jiraBaseUrl}/browse/${entity.key}` : null;
   const isPrecondition = type === 'preconditions';
   const isTestExecution = type === 'test-executions';
+  const isTestSet = type === 'test-sets';
+  const isTestPlan = type === 'test-plans';
 
   // Get status data from entity if it's a test execution
-  const executionStatus = isTestExecution && 'statuses' in entity
+  const executionStatus = isTestExecution && 'statuses' in entity && 'totalTests' in entity
     ? { totalTests: entity.totalTests, statuses: entity.statuses }
     : null;
+
+  // Get test count for Test Sets and Test Plans
+  const testCount = (isTestSet || isTestPlan) && 'testCount' in entity ? entity.testCount : null;
 
   // Fetch tests when expanded (only for non-preconditions, or when explicitly expanded)
   useEffect(() => {
@@ -458,10 +464,16 @@ function EntityCard({
               {entity.key}
             </span>
             <span className="text-xs text-text-muted">{singular}</span>
-            {/* Test count badge for test executions */}
-            {isTestExecution && executionStatus && (
+            {/* Test count badge for Test Executions */}
+            {executionStatus && (
               <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-sidebar text-text-secondary">
                 {executionStatus.totalTests} tests
+              </span>
+            )}
+            {/* Test count badge for Test Sets and Test Plans */}
+            {testCount !== null && (
+              <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-sidebar text-text-secondary">
+                {testCount} tests
               </span>
             )}
           </div>
@@ -469,8 +481,8 @@ function EntityCard({
             {entity.summary}
           </p>
 
-          {/* Execution Status Bar for Test Executions */}
-          {isTestExecution && executionStatus && executionStatus.totalTests > 0 && (
+          {/* Status Bar for Test Executions only */}
+          {executionStatus && executionStatus.totalTests > 0 && (
             <div className="mt-2 flex items-center gap-2">
               <div className="flex-1 h-2 bg-sidebar rounded-full overflow-hidden flex">
                 {executionStatus.statuses.map((s, idx) => {
@@ -536,7 +548,7 @@ function EntityCard({
         <div className="border-t border-border bg-sidebar/30">
           <div className="px-4 py-3">
             {/* Execution Status Legend for Test Executions */}
-            {isTestExecution && executionStatus && executionStatus.totalTests > 0 && (
+            {executionStatus && executionStatus.totalTests > 0 && (
               <div className="mb-4 pb-3 border-b border-border">
                 <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
                   Execution Status
@@ -600,7 +612,7 @@ function EntityCard({
 }
 
 // Tests list component with navigation
-function TestsList({ tests, jiraBaseUrl }: { tests: XrayEntity[]; jiraBaseUrl?: string }) {
+function TestsList({ tests, jiraBaseUrl }: { tests: TestWithStatus[]; jiraBaseUrl?: string }) {
   const navigate = useNavigate();
 
   return (
@@ -622,6 +634,18 @@ function TestsList({ tests, jiraBaseUrl }: { tests: XrayEntity[]; jiraBaseUrl?: 
               <span className="text-sm font-medium text-accent group-hover:underline">
                 {test.key}
               </span>
+              {/* Status badge */}
+              {test.status && (
+                <span
+                  className="px-1.5 py-0.5 text-xs font-medium rounded"
+                  style={{
+                    backgroundColor: test.statusColor ? `${test.statusColor}20` : '#6B728020',
+                    color: test.statusColor || '#6B7280',
+                  }}
+                >
+                  {test.status}
+                </span>
+              )}
             </div>
             <p className="text-sm text-text-secondary truncate">{test.summary}</p>
           </div>
