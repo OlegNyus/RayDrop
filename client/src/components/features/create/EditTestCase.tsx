@@ -97,17 +97,21 @@ export function EditTestCase() {
     if (!activeProject) return;
     setLoadingXray(true);
     try {
-      const [testPlans, testExecutions, testSets, preconditions, folders] = await Promise.all([
+      const [testPlans, testExecutions, testSets, preconditions, foldersResult] = await Promise.all([
         xrayApi.getTestPlans(activeProject).catch(() => []),
         xrayApi.getTestExecutions(activeProject).catch(() => []),
         xrayApi.getTestSets(activeProject).catch(() => []),
         xrayApi.getPreconditions(activeProject).catch(() => []),
-        xrayApi.getAllFolders(activeProject).catch(() => []),
+        xrayApi.getAllFolders(activeProject).catch(() => ({ folders: [], projectId: '' })),
       ]);
       setXrayCache({
         testPlans, testExecutions, testSets, preconditions,
-        folders: [{ path: '/', name: '/ (Root)' }, ...folders],
+        folders: [{ path: '/', name: '/ (Root)' }, ...foldersResult.folders],
       });
+      // Store projectId for folder linking
+      if (foldersResult.projectId) {
+        setDraft(d => d ? { ...d, xrayLinking: { ...d.xrayLinking, projectId: foldersResult.projectId } } : null);
+      }
     } catch (err) {
       console.error('Failed to load Xray entities:', err);
     } finally {
@@ -173,8 +177,31 @@ export function EditTestCase() {
     }
   };
 
-  const isStep1Valid = () => draft ? draft.summary.trim().length > 0 && draft.description.trim().length > 0 : false;
+  // Helper to check if summary has a valid Title (not just Functional Area + Layer)
+  const summaryHasTitle = (summary: string): boolean => {
+    const parts = summary.split(' | ');
+    // If 2 parts (Area | Layer), title is missing
+    if (parts.length === 2) return false;
+    // If 3 parts, third part (Title) must not be empty
+    if (parts.length === 3 && !parts[2].trim()) return false;
+    // 1 part = just a title (valid), or 3 parts with non-empty title (valid)
+    return summary.trim().length > 0;
+  };
+
+  const isStep1Valid = () => draft ? summaryHasTitle(draft.summary) && draft.description.trim().length > 0 : false;
   const isStep2Valid = () => draft ? draft.steps.every(s => s.action.trim() && s.result.trim()) : false;
+
+  // Can import/mark ready only if all steps are valid
+  const canImport = () => isStep1Valid() && isStep2Valid() && isStep3Valid();
+
+  // Can save draft if at least ONE required field has content
+  const canSaveDraft = () => {
+    if (!draft) return false;
+    const hasSummary = draft.summary.trim().length > 0;
+    const hasDescription = draft.description.trim().length > 0;
+    const hasStepContent = draft.steps.some(s => s.action.trim().length > 0 || s.result.trim().length > 0);
+    return hasSummary || hasDescription || hasStepContent;
+  };
   const isStep3Valid = () => {
     if (!draft) return false;
     const { xrayLinking } = draft;
@@ -185,7 +212,11 @@ export function EditTestCase() {
   const validateStep1 = (): boolean => {
     if (!draft) return false;
     const newErrors: Record<string, string> = {};
-    if (!draft.summary.trim()) newErrors.summary = 'Summary is required';
+    if (!draft.summary.trim()) {
+      newErrors.summary = 'Summary is required';
+    } else if (!summaryHasTitle(draft.summary)) {
+      newErrors.summary = 'Title is required';
+    }
     if (!draft.description.trim()) newErrors.description = 'Description is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -209,8 +240,8 @@ export function EditTestCase() {
   };
 
   const nextStep = () => {
-    if (currentStep === 1 && validateStep1()) setCurrentStep(2);
-    else if (currentStep === 2 && validateStep2()) setCurrentStep(3);
+    // Allow free navigation between steps - validation only happens on Mark Ready / Import
+    if (currentStep < 3) setCurrentStep((currentStep + 1) as Step);
   };
 
   const prevStep = () => {
@@ -285,42 +316,86 @@ export function EditTestCase() {
       const testIssueId = importResult.testIssueIds[0];
       const testKey = importResult.testKeys[0];
 
-      // Parallelize all Xray linking operations for better performance
-      const linkingPromises: Promise<unknown>[] = [
+      // Build linking operations with descriptive labels for error reporting
+      interface LinkingOperation {
+        label: string;
+        promise: Promise<{ addedTests?: number; addedPreconditions?: number; warning?: string }>;
+      }
+
+      const linkingOperations: LinkingOperation[] = [
         // Link to test plans
-        ...draft.xrayLinking.testPlanIds.map(testPlanId =>
-          xrayApi.addTestsToTestPlan(testPlanId, [testIssueId])
-        ),
+        ...draft.xrayLinking.testPlanIds.map((testPlanId, i) => ({
+          label: `Test Plan ${draft.xrayLinking.testPlanDisplays[i]?.display || testPlanId}`,
+          promise: xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]),
+        })),
         // Link to test executions
-        ...draft.xrayLinking.testExecutionIds.map(testExecutionId =>
-          xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId])
-        ),
+        ...draft.xrayLinking.testExecutionIds.map((testExecutionId, i) => ({
+          label: `Test Execution ${draft.xrayLinking.testExecutionDisplays[i]?.display || testExecutionId}`,
+          promise: xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]),
+        })),
         // Link to test sets
-        ...draft.xrayLinking.testSetIds.map(testSetId =>
-          xrayApi.addTestsToTestSet(testSetId, [testIssueId])
-        ),
+        ...draft.xrayLinking.testSetIds.map((testSetId, i) => ({
+          label: `Test Set ${draft.xrayLinking.testSetDisplays[i]?.display || testSetId}`,
+          promise: xrayApi.addTestsToTestSet(testSetId, [testIssueId]),
+        })),
       ];
 
       // Add folder linking if configured
       if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
-        linkingPromises.push(
-          xrayApi.addTestsToFolder(
+        linkingOperations.push({
+          label: `Folder ${draft.xrayLinking.folderPath}`,
+          promise: xrayApi.addTestsToFolder(
             draft.xrayLinking.projectId,
             draft.xrayLinking.folderPath,
             [testIssueId]
-          )
-        );
+          ),
+        });
       }
 
       // Add preconditions linking if any
       if (draft.xrayLinking.preconditionIds.length > 0) {
-        linkingPromises.push(
-          xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds)
-        );
+        linkingOperations.push({
+          label: `Preconditions (${draft.xrayLinking.preconditionIds.length})`,
+          promise: xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds),
+        });
       }
 
-      // Execute all linking operations in parallel
-      await Promise.all(linkingPromises);
+      // Execute all linking operations in parallel using allSettled to capture all results
+      const results = await Promise.allSettled(linkingOperations.map(op => op.promise));
+
+      // Check for failures and warnings
+      const failures: string[] = [];
+      const warnings: string[] = [];
+
+      results.forEach((result, index) => {
+        const op = linkingOperations[index];
+        if (result.status === 'rejected') {
+          const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+          failures.push(`${op.label}: ${errorMsg}`);
+          console.error(`Linking failed for ${op.label}:`, result.reason);
+        } else if (result.status === 'fulfilled') {
+          const value = result.value;
+          if (value.warning) {
+            warnings.push(`${op.label}: ${value.warning}`);
+          }
+          // Check if anything was actually added
+          const addedCount = value.addedTests ?? value.addedPreconditions ?? 0;
+          if (addedCount === 0) {
+            warnings.push(`${op.label}: No items were linked (already linked or not found)`);
+          }
+        }
+      });
+
+      // Log warnings but don't fail the import
+      if (warnings.length > 0) {
+        console.warn('Linking warnings:', warnings);
+      }
+
+      // If there were failures, show them but still mark as imported since the TC was created
+      if (failures.length > 0) {
+        console.error('Some linking operations failed:', failures);
+        setErrors({ linking: `Some links failed: ${failures.join('; ')}` });
+      }
 
       // Update local state with imported info
       setDraft({
@@ -443,6 +518,12 @@ export function EditTestCase() {
         <div className="p-3 bg-red-100 dark:bg-red-900/30 text-error rounded-lg text-sm">{errors.import}</div>
       )}
 
+      {errors.linking && (
+        <div className="p-3 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-sm">
+          <strong>Warning:</strong> {errors.linking}
+        </div>
+      )}
+
       {importSuccess && (
         <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm flex items-center gap-2">
           <span className="text-green-500">✓</span>
@@ -489,7 +570,7 @@ export function EditTestCase() {
         )}
         <div className="flex gap-2">
           {draft.status !== 'ready' && (
-            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || importing || !hasChanges}>
+            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving || importing || !hasChanges || !canSaveDraft()}>
               Update Draft
             </Button>
           )}
@@ -498,15 +579,15 @@ export function EditTestCase() {
           ) : (
             <>
               {draft.status === 'ready' ? (
-                <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing || !hasChanges}>
+                <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing || !hasChanges || !canImport()}>
                   {saving ? 'Saving...' : 'Save Changes'}
                 </Button>
               ) : (
-                <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing}>
+                <Button variant="secondary" onClick={handleSaveReady} disabled={saving || importing || !canImport()}>
                   {saving ? 'Saving...' : 'Save & Mark Ready'}
                 </Button>
               )}
-              <Button onClick={handleImportToXray} disabled={saving || importing}>
+              <Button onClick={handleImportToXray} disabled={saving || importing || !canImport()}>
                 {importing ? 'Importing...' : 'Import to Xray'}
               </Button>
             </>

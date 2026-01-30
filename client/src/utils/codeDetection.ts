@@ -40,6 +40,19 @@ export function detectCode(text: string): CodeDetectionResult {
     };
   }
 
+  // Try to find embedded JS/TS code with prefix text
+  const embeddedJS = findEmbeddedJS(text);
+  if (embeddedJS) {
+    const lang = isTypeScript(embeddedJS.code) ? 'typescript' : 'javascript';
+    return {
+      isCode: true,
+      language: lang,
+      codeBlock: embeddedJS.code,
+      prefixText: embeddedJS.prefix,
+      suffixText: embeddedJS.suffix,
+    };
+  }
+
   // Check for TypeScript (before JS since TS is a superset)
   if (isTypeScript(trimmed)) {
     return { isCode: true, language: 'typescript' };
@@ -105,6 +118,65 @@ function findEmbeddedJSON(text: string): { code: string; prefix: string; suffix:
   }
 
   return null;
+}
+
+/**
+ * Finds embedded JavaScript/TypeScript code in text
+ * Returns the code block and surrounding text
+ */
+function findEmbeddedJS(text: string): { code: string; prefix: string; suffix: string } | null {
+  // Patterns that indicate the start of JS/TS code (at beginning of line)
+  const codeStartPatterns = [
+    /^(const|let|var)\s+\w+/m,           // Variable declaration
+    /^function\s+\w*\s*\(/m,              // Function declaration
+    /^(async\s+)?function/m,              // Async function
+    /^(export|import)\s+/m,               // Module statements
+    /^class\s+\w+/m,                      // Class declaration
+    /^interface\s+\w+/m,                  // Interface declaration
+    /^type\s+\w+\s*=/m,                   // Type alias
+    /^\/\//m,                             // Comment start
+    /^\/\*/m,                             // Block comment start
+    /^if\s*\(/m,                          // If statement
+    /^for\s*\(/m,                         // For loop
+    /^while\s*\(/m,                       // While loop
+    /^try\s*\{/m,                         // Try block
+    /^return\s+/m,                        // Return statement
+    /^await\s+/m,                         // Await expression
+    /^\w+\s*\(/m,                         // Function call at line start
+  ];
+
+  // Find the earliest match position
+  let earliestMatch: { index: number; pattern: RegExp } | null = null;
+
+  for (const pattern of codeStartPatterns) {
+    const match = text.match(pattern);
+    if (match && match.index !== undefined) {
+      if (!earliestMatch || match.index < earliestMatch.index) {
+        earliestMatch = { index: match.index, pattern };
+      }
+    }
+  }
+
+  if (!earliestMatch || earliestMatch.index === 0) {
+    // No prefix text found, or code starts at beginning
+    return null;
+  }
+
+  const prefix = text.slice(0, earliestMatch.index).trim();
+  const codeAndSuffix = text.slice(earliestMatch.index);
+
+  // Only consider it embedded if there's meaningful prefix text
+  // and it doesn't look like code itself
+  if (!prefix || isJavaScript(prefix) || isTypeScript(prefix)) {
+    return null;
+  }
+
+  // Check if the remaining text is actually code
+  if (!isJavaScript(codeAndSuffix) && !isTypeScript(codeAndSuffix)) {
+    return null;
+  }
+
+  return { code: codeAndSuffix.trim(), prefix, suffix: '' };
 }
 
 /**

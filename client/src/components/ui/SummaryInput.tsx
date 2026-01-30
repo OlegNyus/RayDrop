@@ -243,6 +243,16 @@ export function SummaryInput({
               error && !functionalArea ? 'border-error' : ''
             }`}
             onClick={openDropdown}
+            onKeyDown={(e) => {
+              if (!isOpen && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                openDropdown();
+              }
+            }}
+            tabIndex={disabled || isOpen ? -1 : 0}
+            role="combobox"
+            aria-expanded={isOpen}
+            aria-haspopup="listbox"
           >
             {functionalArea && !isOpen ? (
               <>
@@ -382,7 +392,7 @@ export function SummaryInput({
               type="button"
               onClick={() => handleLayerChange('UI')}
               disabled={disabled}
-              className={`flex-1 text-sm font-medium transition-colors ${disabled ? 'cursor-not-allowed' : ''} ${
+              className={`flex-1 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${disabled ? 'cursor-not-allowed' : ''} ${
                 layer === 'UI'
                   ? 'bg-accent text-white'
                   : 'bg-input-bg text-text-secondary hover:bg-sidebar-hover'
@@ -394,7 +404,7 @@ export function SummaryInput({
               type="button"
               onClick={() => handleLayerChange('API')}
               disabled={disabled}
-              className={`flex-1 text-sm font-medium transition-colors ${disabled ? 'cursor-not-allowed' : ''} ${
+              className={`flex-1 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${disabled ? 'cursor-not-allowed' : ''} ${
                 layer === 'API'
                   ? 'bg-blue-500 text-white'
                   : 'bg-input-bg text-text-secondary hover:bg-sidebar-hover'
@@ -423,7 +433,7 @@ export function SummaryInput({
         </div>
       </div>
 
-      {error && !functionalArea && !title && (
+      {error && (
         <p className="text-xs text-error">{error}</p>
       )}
     </div>

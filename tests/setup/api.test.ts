@@ -227,4 +227,27 @@ describe('Config API', () => {
       expect(response.body.success).toBe(true);
     });
   });
+
+  // ============================================
+  // GET /api/config/test - Test stored credentials
+  // ============================================
+  describe('GET /api/config/test', () => {
+    it('returns 401 when config does not exist', async () => {
+      const response = await request(app).get('/api/config/test');
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Not configured');
+    });
+
+    it('returns 401 when config is missing credentials', async () => {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({
+        jiraBaseUrl: 'https://company.atlassian.net/',
+      }));
+
+      const response = await request(app).get('/api/config/test');
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Not configured');
+    });
+  });
 });

@@ -92,8 +92,8 @@ export function StepIndicator({ currentStep, onStepClick, step1Valid, step2Valid
       <div className="absolute top-5 left-0 right-0 h-0.5 bg-border" />
       <div className="relative flex justify-between">
         {steps.map(step => {
-          // Step is complete if: (before current AND valid) OR (step 3 with all required fields filled)
-          const isComplete = (step.num < currentStep && step.valid) || (step.num === 3 && step.valid);
+          // Step is complete if: (at or before current AND valid) OR (step 3 with all required fields filled)
+          const isComplete = (step.num <= currentStep && step.valid) || (step.num === 3 && step.valid);
           const isCurrent = step.num === currentStep && !isComplete;
           const isClickable = step.num <= currentStep || (step.num === 2 && step1Valid) || (step.num === 3 && step2Valid);
 

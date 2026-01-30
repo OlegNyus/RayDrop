@@ -1,5 +1,6 @@
 import { render as rtlRender, RenderOptions } from '@testing-library/react';
 import { ReactElement, ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider } from '../../client/src/context/ThemeContext';
 import { AppProvider } from '../../client/src/context/AppContext';
 
@@ -15,6 +16,19 @@ function AllProviders({ children }: WrapperProps) {
         {children}
       </AppProvider>
     </ThemeProvider>
+  );
+}
+
+// Full providers with router (for components using useNavigate)
+function AllProvidersWithRouter({ children }: WrapperProps) {
+  return (
+    <MemoryRouter>
+      <ThemeProvider>
+        <AppProvider>
+          {children}
+        </AppProvider>
+      </ThemeProvider>
+    </MemoryRouter>
   );
 }
 
@@ -41,6 +55,14 @@ export function renderWithTheme(
   options?: Omit<RenderOptions, 'wrapper'>
 ) {
   return rtlRender(ui, { wrapper: ThemeOnlyProvider, ...options });
+}
+
+// Render with router (for components using useNavigate)
+export function renderWithRouter(
+  ui: ReactElement,
+  options?: Omit<RenderOptions, 'wrapper'>
+) {
+  return rtlRender(ui, { wrapper: AllProvidersWithRouter, ...options });
 }
 
 // Re-export everything from testing-library
