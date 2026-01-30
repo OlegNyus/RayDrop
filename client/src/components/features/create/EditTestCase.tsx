@@ -97,17 +97,21 @@ export function EditTestCase() {
     if (!activeProject) return;
     setLoadingXray(true);
     try {
-      const [testPlans, testExecutions, testSets, preconditions, folders] = await Promise.all([
+      const [testPlans, testExecutions, testSets, preconditions, foldersResult] = await Promise.all([
         xrayApi.getTestPlans(activeProject).catch(() => []),
         xrayApi.getTestExecutions(activeProject).catch(() => []),
         xrayApi.getTestSets(activeProject).catch(() => []),
         xrayApi.getPreconditions(activeProject).catch(() => []),
-        xrayApi.getAllFolders(activeProject).catch(() => []),
+        xrayApi.getAllFolders(activeProject).catch(() => ({ folders: [], projectId: '' })),
       ]);
       setXrayCache({
         testPlans, testExecutions, testSets, preconditions,
-        folders: [{ path: '/', name: '/ (Root)' }, ...folders],
+        folders: [{ path: '/', name: '/ (Root)' }, ...foldersResult.folders],
       });
+      // Store projectId for folder linking
+      if (foldersResult.projectId) {
+        setDraft(d => d ? { ...d, xrayLinking: { ...d.xrayLinking, projectId: foldersResult.projectId } } : null);
+      }
     } catch (err) {
       console.error('Failed to load Xray entities:', err);
     } finally {

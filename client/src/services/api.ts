@@ -219,7 +219,8 @@ export const xrayApi = {
     request<TestWithDetails[]>(`/xray/tests/by-status/${projectKey}?status=${encodeURIComponent(status)}`),
 
   // Helper to get all folders - flattens nested structure from single API call
-  async getAllFolders(projectKey: string): Promise<{ path: string; name: string }[]> {
+  // Returns both folders and projectId (needed for folder linking)
+  async getAllFolders(projectKey: string): Promise<{ folders: { path: string; name: string }[]; projectId: string }> {
     try {
       const { projectId } = await this.getProjectId(projectKey);
       const rootFolder = await this.getFolders(projectId, '/');
@@ -236,10 +237,10 @@ export const xrayApi = {
       };
 
       flatten(rootFolder.folders || []);
-      return folders;
+      return { folders, projectId };
     } catch (err) {
       console.error('Failed to fetch folders:', err);
-      return [];
+      return { folders: [], projectId: '' };
     }
   },
 };

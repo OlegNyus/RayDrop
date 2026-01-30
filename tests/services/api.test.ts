@@ -614,7 +614,7 @@ describe('API Service', () => {
     });
 
     describe('getAllFolders', () => {
-      it('flattens nested folder structure', async () => {
+      it('flattens nested folder structure and returns projectId', async () => {
         mockFetch.mockResolvedValueOnce({
           ok: true,
           json: () => Promise.resolve({ projectId: '12345' }),
@@ -635,13 +635,14 @@ describe('API Service', () => {
 
         const result = await xrayApi.getAllFolders('TEST');
 
-        expect(result).toHaveLength(3);
-        expect(result).toContainEqual({ path: '/Auth', name: 'Auth' });
-        expect(result).toContainEqual({ path: '/Auth/Login', name: 'Login' });
-        expect(result).toContainEqual({ path: '/Cart', name: 'Cart' });
+        expect(result.projectId).toBe('12345');
+        expect(result.folders).toHaveLength(3);
+        expect(result.folders).toContainEqual({ path: '/Auth', name: 'Auth' });
+        expect(result.folders).toContainEqual({ path: '/Auth/Login', name: 'Login' });
+        expect(result.folders).toContainEqual({ path: '/Cart', name: 'Cart' });
       });
 
-      it('returns empty array on error', async () => {
+      it('returns empty folders and projectId on error', async () => {
         mockFetch.mockResolvedValueOnce({
           ok: false,
           json: () => Promise.resolve({ error: 'Failed' }),
@@ -649,7 +650,7 @@ describe('API Service', () => {
 
         const result = await xrayApi.getAllFolders('TEST');
 
-        expect(result).toEqual([]);
+        expect(result).toEqual({ folders: [], projectId: '' });
       });
     });
   });

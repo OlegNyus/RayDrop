@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithTheme, screen, waitFor } from '../helpers/render';
+import { renderWithTheme, screen, waitFor, act } from '../helpers/render';
 import userEvent from '@testing-library/user-event';
 import { SetupForm } from '../../client/src/components/features/setup/SetupForm';
 import { server } from '../mocks/server';
@@ -9,6 +9,9 @@ import {
   invalidConfigs,
   subdomainTestCases,
 } from '../fixtures/config';
+
+// Configure userEvent to work with fake timers
+const setupUser = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
 describe('SetupForm', () => {
   const mockOnComplete = vi.fn();
@@ -53,37 +56,43 @@ describe('SetupForm', () => {
     });
 
     it('P3: stores Client ID in form state', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       const input = screen.getByPlaceholderText(/Enter your Xray Client ID/i);
       await user.type(input, validFormInput.xrayClientId);
 
-      expect(input).toHaveValue(validFormInput.xrayClientId);
+      await waitFor(() => {
+        expect(input).toHaveValue(validFormInput.xrayClientId);
+      });
     });
 
     it('P4: stores Client Secret in form state', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       const input = screen.getByPlaceholderText(/Enter your Xray Client Secret/i);
       await user.type(input, validFormInput.xrayClientSecret);
 
-      expect(input).toHaveValue(validFormInput.xrayClientSecret);
+      await waitFor(() => {
+        expect(input).toHaveValue(validFormInput.xrayClientSecret);
+      });
     });
 
     it('P5: shows URL preview when subdomain is entered', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       const input = screen.getByPlaceholderText('your-company');
       await user.type(input, 'mycompany');
 
-      expect(screen.getByText('https://mycompany.atlassian.net/')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('https://mycompany.atlassian.net/')).toBeInTheDocument();
+      });
     });
 
     it('P6: shows success message after valid test connection', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), validFormInput.xrayClientId);
@@ -96,7 +105,7 @@ describe('SetupForm', () => {
     });
 
     it('P7: calls onComplete with form data on successful submit', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), validFormInput.xrayClientId);
@@ -114,7 +123,7 @@ describe('SetupForm', () => {
     });
 
     it('P8: clears error when user starts typing', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       // Trigger validation error
@@ -129,7 +138,7 @@ describe('SetupForm', () => {
     });
 
     it('P9: calls onCancel when Cancel is clicked in edit mode', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(
         <SetupForm
           onComplete={mockOnComplete}
@@ -150,7 +159,7 @@ describe('SetupForm', () => {
   // ============================================
   describe('Negative Scenarios', () => {
     it('N1: shows error for empty Client ID on submit', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client Secret/i), 'secret');
@@ -162,7 +171,7 @@ describe('SetupForm', () => {
     });
 
     it('N2: shows error for whitespace-only Client ID', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), '   ');
@@ -174,7 +183,7 @@ describe('SetupForm', () => {
     });
 
     it('N3: shows error for empty Client Secret on submit', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
@@ -185,7 +194,7 @@ describe('SetupForm', () => {
     });
 
     it('N5: shows error for empty subdomain on submit', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
@@ -196,7 +205,7 @@ describe('SetupForm', () => {
     });
 
     it('N6: shows error for invalid subdomain characters', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
@@ -208,7 +217,7 @@ describe('SetupForm', () => {
     });
 
     it('N7: shows error for subdomain less than 2 characters', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
@@ -222,7 +231,7 @@ describe('SetupForm', () => {
     it('N8: shows error for invalid credentials on test connection', async () => {
       server.use(errorHandlers.invalidCredentials);
 
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'invalid-id');
@@ -237,7 +246,7 @@ describe('SetupForm', () => {
     it('N14: shows rate limit error on test connection', async () => {
       server.use(errorHandlers.rateLimited);
 
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
@@ -255,7 +264,7 @@ describe('SetupForm', () => {
   // ============================================
   describe('UI States', () => {
     it('shows loading state during form submission', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), validFormInput.xrayClientId);
@@ -267,7 +276,7 @@ describe('SetupForm', () => {
     });
 
     it('shows testing state during connection test', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), validFormInput.xrayClientId);
@@ -285,14 +294,16 @@ describe('SetupForm', () => {
     });
 
     it('enables Test Connection when both credentials are filled', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
       await user.type(screen.getByPlaceholderText(/Client Secret/i), 'secret');
 
-      const testButton = screen.getByRole('button', { name: /Test Connection/i });
-      expect(testButton).not.toBeDisabled();
+      await waitFor(() => {
+        const testButton = screen.getByRole('button', { name: /Test Connection/i });
+        expect(testButton).not.toBeDisabled();
+      });
     });
   });
 
@@ -308,7 +319,7 @@ describe('SetupForm', () => {
     });
 
     it('toggles theme on click', async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
       const themeButton = screen.getByTitle(/Switch to.*mode/i);
@@ -317,8 +328,10 @@ describe('SetupForm', () => {
       await user.click(themeButton);
 
       // Title should change after toggle
-      const newTitle = themeButton.getAttribute('title');
-      expect(newTitle).not.toBe(initialTitle);
+      await waitFor(() => {
+        const newTitle = themeButton.getAttribute('title');
+        expect(newTitle).not.toBe(initialTitle);
+      });
     });
   });
 
@@ -329,19 +342,21 @@ describe('SetupForm', () => {
     it.each(subdomainTestCases.valid)(
       'accepts valid subdomain: $input',
       async ({ input, expected }) => {
-        const user = userEvent.setup();
+        const user = setupUser();
         renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
         await user.type(screen.getByPlaceholderText('your-company'), input);
 
-        expect(screen.getByText(expected)).toBeInTheDocument();
+        await waitFor(() => {
+          expect(screen.getByText(expected)).toBeInTheDocument();
+        });
       }
     );
 
     it.each(subdomainTestCases.invalid)(
       'rejects invalid subdomain: $input ($reason)',
       async ({ input }) => {
-        const user = userEvent.setup();
+        const user = setupUser();
         renderWithTheme(<SetupForm onComplete={mockOnComplete} />);
 
         await user.type(screen.getByPlaceholderText(/Client ID/i), 'clientid');
@@ -350,9 +365,11 @@ describe('SetupForm', () => {
         await user.click(screen.getByRole('button', { name: /Validate & Save/i }));
 
         // Should show validation error (either "at least 2 characters" or "letters, numbers, and hyphens")
-        const shortError = screen.queryByText(/at least 2 characters/i);
-        const formatError = screen.queryByText(/letters, numbers, and hyphens/i);
-        expect(shortError || formatError).toBeTruthy();
+        await waitFor(() => {
+          const shortError = screen.queryByText(/at least 2 characters/i);
+          const formatError = screen.queryByText(/letters, numbers, and hyphens/i);
+          expect(shortError || formatError).toBeTruthy();
+        });
       }
     );
   });

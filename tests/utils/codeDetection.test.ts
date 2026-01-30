@@ -251,6 +251,51 @@ describe('codeDetection', () => {
           expect(result.language).toBe('javascript');
         });
       });
+
+      describe('embedded JavaScript/TypeScript detection', () => {
+        it('detects JS with prefix text "Code snippet:"', () => {
+          const result = detectCode('Code snippet:\nconst x = 5;');
+          expect(result.isCode).toBe(true);
+          expect(result.language).toBe('javascript');
+          expect(result.codeBlock).toBe('const x = 5;');
+          expect(result.prefixText).toBe('Code snippet:');
+        });
+
+        it('detects JS with descriptive prefix', () => {
+          const result = detectCode('Example usage:\nconst input = screen.getByPlaceholderText(/test/);');
+          expect(result.isCode).toBe(true);
+          expect(result.language).toBe('javascript');
+          expect(result.prefixText).toBe('Example usage:');
+          expect(result.codeBlock).toContain('const input');
+        });
+
+        it('detects TypeScript with prefix text', () => {
+          const result = detectCode('Type definition:\ninterface User { id: number; }');
+          expect(result.isCode).toBe(true);
+          expect(result.language).toBe('typescript');
+          expect(result.prefixText).toBe('Type definition:');
+          expect(result.codeBlock).toContain('interface User');
+        });
+
+        it('detects multiline JS code with prefix', () => {
+          const code = `Test data:
+const input = document.querySelector('#test');
+await user.type(input, 'hello');`;
+          const result = detectCode(code);
+          expect(result.isCode).toBe(true);
+          expect(result.language).toBe('javascript');
+          expect(result.prefixText).toBe('Test data:');
+          expect(result.codeBlock).toContain('const input');
+        });
+
+        it('returns no prefix for code-only content', () => {
+          const result = detectCode('const x = 5;');
+          expect(result.isCode).toBe(true);
+          expect(result.language).toBe('javascript');
+          expect(result.codeBlock).toBeUndefined();
+          expect(result.prefixText).toBeUndefined();
+        });
+      });
     });
 
     describe('negative cases', () => {
