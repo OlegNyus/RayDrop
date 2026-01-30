@@ -209,6 +209,16 @@ export function LabelInput({
           disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-text'
         } ${isOpen ? 'ring-2 ring-accent border-transparent' : 'border-input-border'}`}
         onClick={openDropdown}
+        onKeyDown={(e) => {
+          if (!isOpen && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            openDropdown();
+          }
+        }}
+        tabIndex={disabled || isOpen ? -1 : 0}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
       >
         {/* Selected labels */}
         {labels.length > 0 && (
@@ -246,9 +256,6 @@ export function LabelInput({
             onKeyDown={handleKeyDown}
             placeholder="Search or create..."
             className="flex-1 min-w-[120px] outline-none bg-transparent text-sm text-text-primary placeholder-text-muted"
-            role="combobox"
-            aria-expanded={isOpen}
-            aria-haspopup="listbox"
             autoFocus
           />
         ) : labels.length === 0 ? (

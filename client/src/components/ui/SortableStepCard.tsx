@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { TestStep } from '../../types';
@@ -127,94 +127,54 @@ interface TestDataFieldProps {
 }
 
 function TestDataField({ value, onChange }: TestDataFieldProps) {
-  const [isEditing, setIsEditing] = useState(!value); // Start in edit mode if empty
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const { isCode } = detectCode(value);
 
-  // Auto-resize textarea based on content
-  const autoResize = (textarea: HTMLTextAreaElement) => {
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.max(80, textarea.scrollHeight)}px`;
-  };
+  // Auto-show code preview when: code detected, has content, and not actively editing
+  const shouldShowCodePreview = isCode && value.trim() && !isEditing;
 
-  // Focus and resize textarea when entering edit mode
-  useEffect(() => {
-    if (isEditing && textareaRef.current) {
-      textareaRef.current.focus();
-      // Move cursor to end
-      textareaRef.current.selectionStart = textareaRef.current.value.length;
-      // Auto-resize to fit content
-      autoResize(textareaRef.current);
-    }
-  }, [isEditing]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e.target.value);
-    autoResize(e.target);
-  };
-
-  const exitEditMode = () => {
+  const handleBlur = () => {
     setIsEditing(false);
   };
 
-  // Edit mode - show textarea
-  if (isEditing) {
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <label className="text-xs text-text-muted">Test Data</label>
-          {value && (
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault(); // Prevent blur from firing first
-                exitEditMode();
-              }}
-              className="text-xs text-accent hover:text-accent/80 flex items-center gap-1"
-            >
-              Done
-            </button>
-          )}
-        </div>
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onBlur={exitEditMode}
-          placeholder="What data is needed? (optional)"
-          className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-text-primary placeholder-text-muted text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-accent font-mono resize-none"
-          style={{ overflow: 'hidden' }}
-        />
-      </div>
-    );
-  }
+  const handleFocus = () => {
+    setIsEditing(true);
+  };
 
-  // View mode - show formatted content
+  const handleEditClick = () => {
+    setIsEditing(true);
+  };
+
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <label className="text-xs text-text-muted">Test Data</label>
-        <button
-          type="button"
-          onClick={() => setIsEditing(true)}
-          className="text-xs text-accent hover:text-accent/80 flex items-center gap-1"
-        >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          Edit
-        </button>
+        {shouldShowCodePreview && (
+          <button
+            type="button"
+            onClick={handleEditClick}
+            className="text-xs text-accent hover:text-accent/80 flex items-center gap-1"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit
+          </button>
+        )}
       </div>
-      {/* Show code block if code detected, otherwise show as plain text */}
-      {isCode ? (
-        <CodeBlock code={value} />
-      ) : (
-        <div
-          onClick={() => setIsEditing(true)}
-          className="px-3 py-2 bg-sidebar/50 border border-border rounded-lg text-text-primary text-sm font-mono whitespace-pre-wrap cursor-pointer hover:bg-sidebar/70 transition-colors"
-        >
-          {value || <span className="text-text-muted">Click to add test data...</span>}
+      {shouldShowCodePreview ? (
+        <div onClick={handleEditClick} className="cursor-text">
+          <CodeBlock code={value} />
         </div>
+      ) : (
+        <textarea
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          placeholder="What data is needed? (optional)"
+          className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-text-primary placeholder-text-muted text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-accent"
+        />
       )}
     </div>
   );

@@ -227,7 +227,7 @@ describe('UI Components', () => {
     it('has base transition and focus styles', () => {
       renderWithTheme(<Button>Styled</Button>);
       const button = screen.getByRole('button');
-      expect(button).toHaveClass('transition-colors', 'focus:outline-none', 'focus:ring-2');
+      expect(button).toHaveClass('transition-colors', 'focus:outline-none', 'focus-visible:ring-2');
     });
   });
 

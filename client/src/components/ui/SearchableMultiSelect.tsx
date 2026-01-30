@@ -114,6 +114,16 @@ export function SearchableMultiSelect({
             loading ? 'opacity-60 cursor-not-allowed' : ''
           } ${isOpen ? 'ring-2 ring-accent border-transparent' : error ? 'border-error' : 'border-input-border'}`}
           onClick={openDropdown}
+          onKeyDown={(e) => {
+            if (!isOpen && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              openDropdown();
+            }
+          }}
+          tabIndex={loading || isOpen ? -1 : 0}
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
         >
           {/* Selected items as tags */}
           {selectedDisplays.length > 0 && (
