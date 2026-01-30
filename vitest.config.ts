@@ -106,6 +106,11 @@ export default defineConfig({
       '@client': path.resolve(__dirname, './client/src'),
       '@server': path.resolve(__dirname, './server/src'),
       '@tests': path.resolve(__dirname, './tests'),
+      // Ensure single React instance for testing
+      'react': path.resolve(__dirname, './client/node_modules/react'),
+      'react-dom': path.resolve(__dirname, './client/node_modules/react-dom'),
+      'react-router-dom': path.resolve(__dirname, './client/node_modules/react-router-dom'),
+      'react-router': path.resolve(__dirname, './client/node_modules/react-router'),
     },
   },
 });
