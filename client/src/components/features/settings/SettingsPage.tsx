@@ -3,10 +3,12 @@ import { useApp } from '../../../context/AppContext';
 import { Card, Button, Input, ConfirmModal } from '../../ui';
 import { configApi, settingsApi, draftsApi } from '../../../services/api';
 import type { Draft } from '../../../types';
+import { FeatureDemo } from '../setup/FeatureDemo';
 
 export function SettingsPage() {
   const { config, isConfigured, refreshConfig, settings, refreshSettings } = useApp();
   const [allDrafts, setAllDrafts] = useState<Draft[]>([]);
+  const [showDemo, setShowDemo] = useState(false);
 
   // Fetch ALL drafts (not filtered by project) for accurate counts
   useEffect(() => {
@@ -36,6 +38,27 @@ export function SettingsPage() {
         onUpdate={refreshSettings}
         draftCounts={getDraftCountsByProject(allDrafts)}
       />
+
+      {/* About Section */}
+      <Card>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">About RayDrop</h2>
+            <p className="text-sm text-text-muted">Learn about RayDrop features</p>
+          </div>
+        </div>
+        <Button variant="secondary" onClick={() => setShowDemo(true)}>
+          See Feature Tour
+        </Button>
+      </Card>
+
+      {/* Feature Demo Modal */}
+      {showDemo && <FeatureDemo onClose={() => setShowDemo(false)} />}
     </div>
   );
 }

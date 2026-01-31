@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Button, Input, Spinner } from '../../ui';
 import { configApi } from '../../../services/api';
 import { useTheme } from '../../../context/ThemeContext';
+import { FeatureDemo } from './FeatureDemo';
 
 interface SetupFormProps {
   onComplete: (data: { xrayClientId: string; xrayClientSecret: string; jiraBaseUrl: string }) => void;
@@ -63,6 +64,9 @@ export function SetupForm({
   // Test connection state
   const [testStatus, setTestStatus] = useState<TestStatus>('idle');
   const [testError, setTestError] = useState('');
+
+  // Demo modal state
+  const [showDemo, setShowDemo] = useState(false);
 
   // Timers ref for cleanup
   const timersRef = useRef<number[]>([]);
@@ -226,6 +230,15 @@ export function SetupForm({
                 ? 'Update your Xray Cloud API credentials'
                 : 'Enter your Xray Cloud API credentials to get started'}
             </p>
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={() => setShowDemo(true)}
+                className="mt-3 text-sm text-accent hover:text-accent-hover hover:underline transition-colors"
+              >
+                See what RayDrop can do →
+              </button>
+            )}
           </div>
 
           {/* Client ID */}
@@ -380,6 +393,9 @@ export function SetupForm({
           </div>
         </form>
       </Card>
+
+      {/* Feature Demo Modal */}
+      {showDemo && <FeatureDemo onClose={() => setShowDemo(false)} />}
     </div>
   );
 }
