@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -6,6 +6,168 @@ import { ProjectSelector } from '../ui';
 import { draftsApi } from '../../services/api';
 import { SIDEBAR_BADGE_COLORS } from '../../constants/colors';
 import type { Draft } from '../../types';
+
+// Secret Logo Component with long-press easter egg hint
+function SecretLogo() {
+  const [showHint, setShowHint] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const holdTimer = useRef<number | null>(null);
+  const progressTimer = useRef<number | null>(null);
+
+  const HOLD_DURATION = 3000; // 3 seconds
+  const PROGRESS_INTERVAL = 50;
+
+  const startHold = useCallback(() => {
+    setIsHolding(true);
+    setProgress(0);
+
+    // Progress animation
+    let elapsed = 0;
+    progressTimer.current = window.setInterval(() => {
+      elapsed += PROGRESS_INTERVAL;
+      setProgress(Math.min((elapsed / HOLD_DURATION) * 100, 100));
+    }, PROGRESS_INTERVAL);
+
+    // Trigger after hold duration
+    holdTimer.current = window.setTimeout(() => {
+      setShowHint(true);
+      setIsHolding(false);
+      setProgress(0);
+      if (progressTimer.current) clearInterval(progressTimer.current);
+    }, HOLD_DURATION);
+  }, []);
+
+  const endHold = useCallback(() => {
+    setIsHolding(false);
+    setProgress(0);
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (progressTimer.current) {
+      clearInterval(progressTimer.current);
+      progressTimer.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+      if (progressTimer.current) clearInterval(progressTimer.current);
+    };
+  }, []);
+
+  return (
+    <div className="relative">
+      <div
+        className="flex items-center gap-2.5 cursor-pointer select-none"
+        onMouseDown={startHold}
+        onMouseUp={endHold}
+        onMouseLeave={endHold}
+        onTouchStart={startHold}
+        onTouchEnd={endHold}
+      >
+        {/* Progress ring during hold */}
+        <div className="relative">
+          <svg className="w-8 h-8 flex-shrink-0" viewBox="0 0 64 64" fill="none">
+            {/* Rays */}
+            <g opacity="0.9">
+              <path d="M32 8L30 2L34 2Z" fill="#fbbf24"/>
+              <path d="M44 16L50 10L48 14Z" fill="#f97316"/>
+              <path d="M50 26L58 22L54 28Z" fill="#ef4444"/>
+              <path d="M20 16L14 10L16 14Z" fill="#a855f7"/>
+              <path d="M14 26L6 22L10 28Z" fill="#6366f1"/>
+            </g>
+            {/* Droplet */}
+            <path d="M32 12C32 12 16 30 16 42C16 50.837 23.163 58 32 58C40.837 58 48 50.837 48 42C48 30 32 12 32 12Z" fill="url(#sidebarGradient)"/>
+            <path d="M32 16C32 16 20 32 20 42C20 48.627 25.373 54 32 54C38.627 54 44 48.627 44 42C44 32 32 16 32 16Z" fill="url(#sidebarGlow)" opacity="0.6"/>
+            {/* Shine */}
+            <ellipse cx="24" cy="36" rx="4" ry="6" fill="white" opacity="0.4"/>
+            <circle cx="23" cy="33" r="2" fill="white" opacity="0.6"/>
+            {/* Face */}
+            <ellipse cx="26" cy="42" rx="3" ry="3.5" fill="#1e293b"/>
+            <ellipse cx="38" cy="42" rx="3" ry="3.5" fill="#1e293b"/>
+            <circle cx="27" cy="41" r="1.2" fill="white"/>
+            <circle cx="39" cy="41" r="1.2" fill="white"/>
+            <path d="M28 48Q32 52 36 48" stroke="#1e293b" strokeWidth="2" strokeLinecap="round" fill="none"/>
+            <defs>
+              <linearGradient id="sidebarGradient" x1="16" y1="12" x2="48" y2="58" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#22d3ee"/>
+                <stop offset="50%" stopColor="#818cf8"/>
+                <stop offset="100%" stopColor="#c084fc"/>
+              </linearGradient>
+              <radialGradient id="sidebarGlow" cx="32" cy="35" r="20" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#ffffff"/>
+                <stop offset="100%" stopColor="#818cf8" stopOpacity="0"/>
+              </radialGradient>
+            </defs>
+          </svg>
+          {/* Progress ring */}
+          {isHolding && (
+            <svg
+              className="absolute inset-0 w-8 h-8 -rotate-90"
+              viewBox="0 0 36 36"
+            >
+              <circle
+                cx="18"
+                cy="18"
+                r="16"
+                fill="none"
+                stroke="rgba(139, 92, 246, 0.3)"
+                strokeWidth="2"
+              />
+              <circle
+                cx="18"
+                cy="18"
+                r="16"
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="2"
+                strokeDasharray="100"
+                strokeDashoffset={100 - progress}
+                strokeLinecap="round"
+                style={{ transition: 'stroke-dashoffset 0.05s linear' }}
+              />
+            </svg>
+          )}
+        </div>
+        <h1 className="text-xl font-bold text-text-primary">RayDrop</h1>
+      </div>
+
+      {/* Secret Hint Tooltip */}
+      {showHint && (
+        <div
+          className="absolute top-full left-0 mt-2 p-3 bg-card border border-accent/50 rounded-lg shadow-lg z-50 w-56 animate-fadeIn"
+          onClick={() => setShowHint(false)}
+        >
+          <div className="text-xs font-semibold text-accent mb-2 flex items-center gap-1">
+            <span>🤫</span> Secret discovered!
+          </div>
+          <div className="space-y-2 text-xs text-text-secondary">
+            <p className="flex items-center gap-2">
+              <span className="text-green-400">💚</span>
+              <span>Type <code className="px-1 py-0.5 bg-sidebar rounded text-text-primary">matrix</code> anywhere</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <span className="text-cyan-400">👁️</span>
+              <span>Hold <code className="px-1 py-0.5 bg-sidebar rounded text-text-primary">Shift</code> + type <code className="px-1 py-0.5 bg-sidebar rounded text-text-primary">xray</code></span>
+            </p>
+          </div>
+          <p className="text-[10px] text-text-muted mt-2 italic">Click to dismiss</p>
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(-5px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
+          `}</style>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface NavItemConfig {
   path: string;
@@ -73,42 +235,7 @@ export function Sidebar() {
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-2.5">
-          <svg className="w-8 h-8 flex-shrink-0" viewBox="0 0 64 64" fill="none">
-            {/* Rays */}
-            <g opacity="0.9">
-              <path d="M32 8L30 2L34 2Z" fill="#fbbf24"/>
-              <path d="M44 16L50 10L48 14Z" fill="#f97316"/>
-              <path d="M50 26L58 22L54 28Z" fill="#ef4444"/>
-              <path d="M20 16L14 10L16 14Z" fill="#a855f7"/>
-              <path d="M14 26L6 22L10 28Z" fill="#6366f1"/>
-            </g>
-            {/* Droplet */}
-            <path d="M32 12C32 12 16 30 16 42C16 50.837 23.163 58 32 58C40.837 58 48 50.837 48 42C48 30 32 12 32 12Z" fill="url(#sidebarGradient)"/>
-            <path d="M32 16C32 16 20 32 20 42C20 48.627 25.373 54 32 54C38.627 54 44 48.627 44 42C44 32 32 16 32 16Z" fill="url(#sidebarGlow)" opacity="0.6"/>
-            {/* Shine */}
-            <ellipse cx="24" cy="36" rx="4" ry="6" fill="white" opacity="0.4"/>
-            <circle cx="23" cy="33" r="2" fill="white" opacity="0.6"/>
-            {/* Face */}
-            <ellipse cx="26" cy="42" rx="3" ry="3.5" fill="#1e293b"/>
-            <ellipse cx="38" cy="42" rx="3" ry="3.5" fill="#1e293b"/>
-            <circle cx="27" cy="41" r="1.2" fill="white"/>
-            <circle cx="39" cy="41" r="1.2" fill="white"/>
-            <path d="M28 48Q32 52 36 48" stroke="#1e293b" strokeWidth="2" strokeLinecap="round" fill="none"/>
-            <defs>
-              <linearGradient id="sidebarGradient" x1="16" y1="12" x2="48" y2="58" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#22d3ee"/>
-                <stop offset="50%" stopColor="#818cf8"/>
-                <stop offset="100%" stopColor="#c084fc"/>
-              </linearGradient>
-              <radialGradient id="sidebarGlow" cx="32" cy="35" r="20" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#ffffff"/>
-                <stop offset="100%" stopColor="#818cf8" stopOpacity="0"/>
-              </radialGradient>
-            </defs>
-          </svg>
-          <h1 className="text-xl font-bold text-text-primary">RayDrop</h1>
-        </div>
+        <SecretLogo />
         <p className="text-xs text-text-muted mt-1">Xray Test Case Manager</p>
       </div>
 
