@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { Card, StatusBadge, TestKeyLink } from '../../ui';
@@ -96,37 +96,49 @@ export function Dashboard() {
   // Calculate workflow progress (imported / total)
   const progressPercent = total > 0 ? Math.round((stats.imported / total) * 100) : 0;
 
-  // Reset execution state when project changes
+  // Fetch test executions when project changes - with proper cleanup
   useEffect(() => {
+    // Reset state immediately when project changes
     setTestExecutions([]);
     setSelectedExecutionId(null);
     setExecutionStatus(null);
-  }, [activeProject]);
 
-  // Fetch test executions when project changes
-  useEffect(() => {
     if (!activeProject || !isConfigured) {
       return;
     }
+
+    let cancelled = false;
 
     const fetchExecutions = async () => {
       setLoadingExecutions(true);
       try {
         const data = await xrayApi.getTestExecutions(activeProject);
-        setTestExecutions(data);
-        // Auto-select first execution if available
-        if (data.length > 0) {
-          setSelectedExecutionId(data[0].issueId);
+        // Only update state if this fetch wasn't cancelled
+        if (!cancelled) {
+          setTestExecutions(data);
+          // Auto-select first execution if available
+          if (data.length > 0) {
+            setSelectedExecutionId(data[0].issueId);
+          }
         }
       } catch (err) {
-        console.error('Failed to fetch test executions:', err);
-        setTestExecutions([]);
+        if (!cancelled) {
+          console.error('Failed to fetch test executions:', err);
+          setTestExecutions([]);
+        }
       } finally {
-        setLoadingExecutions(false);
+        if (!cancelled) {
+          setLoadingExecutions(false);
+        }
       }
     };
 
     fetchExecutions();
+
+    // Cleanup function to cancel if project changes mid-fetch
+    return () => {
+      cancelled = true;
+    };
   }, [activeProject, isConfigured]);
 
   // Fetch execution status when selection changes
@@ -222,25 +234,13 @@ export function Dashboard() {
               <h3 className="text-lg font-semibold text-text-primary">Test Execution Status</h3>
             </div>
 
-            {/* Execution Selector */}
-            <select
-              value={selectedExecutionId || ''}
-              onChange={(e) => setSelectedExecutionId(e.target.value || null)}
-              disabled={loadingExecutions || testExecutions.length === 0}
-              className="px-3 py-1.5 text-sm bg-sidebar border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/50 max-w-xs truncate"
-            >
-              {loadingExecutions ? (
-                <option>Loading...</option>
-              ) : testExecutions.length === 0 ? (
-                <option>No executions</option>
-              ) : (
-                testExecutions.map((exec) => (
-                  <option key={exec.issueId} value={exec.issueId}>
-                    {exec.key} - {exec.summary}
-                  </option>
-                ))
-              )}
-            </select>
+            {/* Execution Selector - Custom Dropdown */}
+            <ExecutionSelector
+              executions={testExecutions}
+              selectedId={selectedExecutionId}
+              onSelect={setSelectedExecutionId}
+              loading={loadingExecutions}
+            />
           </div>
 
           {/* Status Content */}
@@ -253,7 +253,9 @@ export function Dashboard() {
               {/* Donut Chart */}
               <div className="flex flex-col items-center">
                 <ExecutionDonutChart statuses={executionStatus.statuses} total={executionStatus.totalTests} />
-                <p className="text-sm text-text-muted mt-3">{executionStatus.key}</p>
+                <div className="mt-3">
+                  <TestKeyLink testKey={executionStatus.key} />
+                </div>
               </div>
 
               {/* Status Legend */}
@@ -482,6 +484,106 @@ function DonutChart({
         <span className="text-2xl font-bold text-text-primary">{total}</span>
         <span className="text-xs text-text-muted">Total</span>
       </div>
+    </div>
+  );
+}
+
+// Custom Execution Selector Dropdown
+function ExecutionSelector({
+  executions,
+  selectedId,
+  onSelect,
+  loading,
+}: {
+  executions: XrayEntity[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  loading: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const selectedExec = executions.find(e => e.issueId === selectedId);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close on escape
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, []);
+
+  const displayText = loading
+    ? 'Loading...'
+    : executions.length === 0
+    ? 'No executions'
+    : selectedExec
+    ? `${selectedExec.key} - ${selectedExec.summary}`
+    : 'Select execution...';
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      {/* Trigger Button */}
+      <button
+        onClick={() => !loading && executions.length > 0 && setIsOpen(!isOpen)}
+        disabled={loading || executions.length === 0}
+        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-sidebar border border-border rounded-lg text-text-primary hover:bg-sidebar-hover focus:outline-none focus:ring-2 focus:ring-accent/50 max-w-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        <span className="truncate max-w-[200px]">{displayText}</span>
+        <svg
+          className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Dropdown */}
+      {isOpen && executions.length > 0 && (
+        <div className="absolute top-full right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+          <div className="max-h-64 overflow-y-auto py-1">
+            {executions.map((exec) => {
+              const isSelected = exec.issueId === selectedId;
+              return (
+                <button
+                  key={exec.issueId}
+                  onClick={() => {
+                    onSelect(exec.issueId);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-sidebar-hover transition-colors ${
+                    isSelected ? 'bg-accent/10 text-accent' : 'text-text-primary'
+                  }`}
+                >
+                  <span className="font-mono text-xs text-accent flex-shrink-0">{exec.key}</span>
+                  <span className="truncate flex-1">{exec.summary}</span>
+                  {isSelected && (
+                    <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

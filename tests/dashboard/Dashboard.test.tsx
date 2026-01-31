@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor, renderWithRouter } from '../helpers/render';
+import userEvent from '@testing-library/user-event';
 import { Dashboard } from '../../client/src/components/features/dashboard/Dashboard';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -170,18 +171,14 @@ describe('Dashboard', () => {
       });
     });
 
-    it('displays execution selector', async () => {
+    it('displays execution selector with loaded execution', async () => {
       renderWithRouter(<Dashboard />);
       await waitFor(() => {
-        const select = screen.getByRole('combobox');
-        expect(select).toBeInTheDocument();
-      });
-    });
-
-    it('shows execution options', async () => {
-      renderWithRouter(<Dashboard />);
-      await waitFor(() => {
-        expect(screen.getByText(/TEST-E1/)).toBeInTheDocument();
+        // Custom dropdown shows selected execution key and summary
+        expect(screen.getByText('Test Execution Status')).toBeInTheDocument();
+        // The execution key should be visible
+        const execKeys = screen.getAllByText(/TEST-E1/);
+        expect(execKeys.length).toBeGreaterThan(0);
       });
     });
 
