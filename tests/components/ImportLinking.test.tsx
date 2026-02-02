@@ -75,6 +75,21 @@ async function navigateToStep3() {
   });
 }
 
+// Helper to click Import and confirm in the modal
+async function clickImportAndConfirm() {
+  // Click "Import to Xray" button
+  fireEvent.click(screen.getByText('Import to Xray'));
+
+  // Wait for confirmation modal to appear
+  await waitFor(() => {
+    expect(screen.getByText('The following operations will be performed:')).toBeInTheDocument();
+  });
+
+  // Click "Import" button in the modal to confirm
+  const importButton = screen.getByRole('button', { name: 'Import' });
+  fireEvent.click(importButton);
+}
+
 describe('Import and Linking', () => {
   beforeEach(() => {
     // Setup default MSW handlers
@@ -196,9 +211,8 @@ describe('Import and Linking', () => {
       // Navigate to step 3 (Xray Linking)
       await navigateToStep3();
 
-      // Click Import button
-      const importButton = screen.getByText('Import to Xray');
-      fireEvent.click(importButton);
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
       // Wait for success
       await waitFor(() => {
@@ -268,8 +282,8 @@ describe('Import and Linking', () => {
       // Navigate to step 3
       await navigateToStep3();
 
-      // Click Import
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
       // Should still show success (TC was created)
       await waitFor(() => {
@@ -329,8 +343,8 @@ describe('Import and Linking', () => {
       // Navigate to step 3
       await navigateToStep3();
 
-      // Click Import
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
       // Wait for import to complete
       await waitFor(() => {
@@ -385,7 +399,8 @@ describe('Import and Linking', () => {
       // Navigate to step 3 and import
       await navigateToStep3();
 
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
       // Should still succeed
       await waitFor(() => {
@@ -414,13 +429,12 @@ describe('Import and Linking', () => {
       // Navigate to step 3
       await navigateToStep3();
 
-      // Click Import
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
-      // Should show error (may appear in both form and modal)
+      // Should show error in the modal's complete state (Import Failed)
       await waitFor(() => {
-        const errorElements = screen.getAllByText(/Xray API unavailable|Import failed/i);
-        expect(errorElements.length).toBeGreaterThan(0);
+        expect(screen.getByText('Import Failed')).toBeInTheDocument();
       }, { timeout: 5000 });
     });
   });
@@ -484,7 +498,8 @@ describe('Import and Linking', () => {
       // Navigate to step 3 and import
       await navigateToStep3();
 
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
       await waitFor(() => {
         expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
@@ -710,7 +725,8 @@ describe('Import and Linking', () => {
       // Navigate and import
       await navigateToStep3();
 
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImportAndConfirm();
 
       // Success - test key shown
       await waitFor(() => {
