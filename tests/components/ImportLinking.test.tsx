@@ -417,9 +417,10 @@ describe('Import and Linking', () => {
       // Click Import
       fireEvent.click(screen.getByText('Import to Xray'));
 
-      // Should show error
+      // Should show error (may appear in both form and modal)
       await waitFor(() => {
-        expect(screen.getByText(/Xray API unavailable|Import failed/i)).toBeInTheDocument();
+        const errorElements = screen.getAllByText(/Xray API unavailable|Import failed/i);
+        expect(errorElements.length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
   });

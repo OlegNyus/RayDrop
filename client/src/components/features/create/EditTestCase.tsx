@@ -18,6 +18,24 @@ import {
 } from './TestCaseFormComponents';
 import { ImportedTestCaseView } from './ImportedTestCaseView';
 
+// Import progress tracking types
+interface ImportStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'in-progress' | 'completed' | 'failed';
+  error?: string;
+}
+
+interface ImportProgress {
+  isOpen: boolean;
+  steps: ImportStep[];
+  currentStepIndex: number;
+  testKey: string | null;
+  linkedItems: { label: string; type: 'plan' | 'execution' | 'set' | 'folder' | 'precondition' }[];
+  isComplete: boolean;
+  hasErrors: boolean;
+}
+
 export function EditTestCase() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -44,6 +62,15 @@ export function EditTestCase() {
   const [importSuccess, setImportSuccess] = useState<{ testKey: string } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress>({
+    isOpen: false,
+    steps: [],
+    currentStepIndex: -1,
+    testKey: null,
+    linkedItems: [],
+    isComplete: false,
+    hasErrors: false,
+  });
 
   // Load draft directly from API by ID
   useEffect(() => {
@@ -297,8 +324,91 @@ export function EditTestCase() {
     setErrors({});
     setImportSuccess(null);
 
+    // Build the steps list for progress tracking
+    const progressSteps: ImportStep[] = [
+      { id: 'create', label: 'Creating test in Jira...', status: 'pending' },
+    ];
+
+    // Add test plan steps
+    draft.xrayLinking.testPlanIds.forEach((_, i) => {
+      const display = draft.xrayLinking.testPlanDisplays[i]?.display || 'Test Plan';
+      progressSteps.push({
+        id: `plan-${i}`,
+        label: `Linking to ${display}...`,
+        status: 'pending',
+      });
+    });
+
+    // Add test execution steps
+    draft.xrayLinking.testExecutionIds.forEach((_, i) => {
+      const display = draft.xrayLinking.testExecutionDisplays[i]?.display || 'Test Execution';
+      progressSteps.push({
+        id: `exec-${i}`,
+        label: `Linking to ${display}...`,
+        status: 'pending',
+      });
+    });
+
+    // Add test set steps
+    draft.xrayLinking.testSetIds.forEach((_, i) => {
+      const display = draft.xrayLinking.testSetDisplays[i]?.display || 'Test Set';
+      progressSteps.push({
+        id: `set-${i}`,
+        label: `Linking to ${display}...`,
+        status: 'pending',
+      });
+    });
+
+    // Add folder step if configured
+    if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
+      progressSteps.push({
+        id: 'folder',
+        label: `Adding to folder ${draft.xrayLinking.folderPath}...`,
+        status: 'pending',
+      });
+    }
+
+    // Add preconditions step if any
+    if (draft.xrayLinking.preconditionIds.length > 0) {
+      progressSteps.push({
+        id: 'preconditions',
+        label: `Linking ${draft.xrayLinking.preconditionIds.length} precondition(s)...`,
+        status: 'pending',
+      });
+    }
+
+    // Initialize progress modal
+    setImportProgress({
+      isOpen: true,
+      steps: progressSteps,
+      currentStepIndex: 0,
+      testKey: null,
+      linkedItems: [],
+      isComplete: false,
+      hasErrors: false,
+    });
+
+    // Helper to update a specific step
+    const updateStep = (stepId: string, status: ImportStep['status'], error?: string) => {
+      setImportProgress(prev => ({
+        ...prev,
+        steps: prev.steps.map(s => s.id === stepId ? { ...s, status, error } : s),
+      }));
+    };
+
+    // Helper to advance to next step
+    const advanceStep = () => {
+      setImportProgress(prev => ({
+        ...prev,
+        currentStepIndex: prev.currentStepIndex + 1,
+      }));
+    };
+
+    const linkedItems: ImportProgress['linkedItems'] = [];
+    let hasErrors = false;
+
     try {
-      // First save the draft as ready
+      // Step 1: Save draft as ready
       await draftsApi.update(draft.id, {
         ...draft,
         status: 'ready',
@@ -306,96 +416,132 @@ export function EditTestCase() {
         projectKey: activeProject,
       });
 
-      // Import to Xray
+      // Step 2: Create test in Jira
+      updateStep('create', 'in-progress');
       const importResult = await xrayApi.import([draft.id], activeProject);
 
       if (!importResult.success || !importResult.testIssueIds || !importResult.testKeys) {
+        updateStep('create', 'failed', importResult.error || 'Import failed');
         throw new Error(importResult.error || 'Import failed');
       }
 
       const testIssueId = importResult.testIssueIds[0];
       const testKey = importResult.testKeys[0];
 
-      // Build linking operations with descriptive labels for error reporting
-      interface LinkingOperation {
-        label: string;
-        promise: Promise<{ addedTests?: number; addedPreconditions?: number; warning?: string }>;
+      updateStep('create', 'completed');
+      setImportProgress(prev => ({ ...prev, testKey }));
+      advanceStep();
+
+      // Execute linking operations sequentially for better progress visualization
+      let stepIndex = 1; // Start after 'create' step
+
+      // Link to test plans
+      for (let i = 0; i < draft.xrayLinking.testPlanIds.length; i++) {
+        const stepId = `plan-${i}`;
+        const testPlanId = draft.xrayLinking.testPlanIds[i];
+        const display = draft.xrayLinking.testPlanDisplays[i]?.display || testPlanId;
+
+        updateStep(stepId, 'in-progress');
+        try {
+          await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
+          updateStep(stepId, 'completed');
+          linkedItems.push({ label: display, type: 'plan' });
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          updateStep(stepId, 'failed', errorMsg);
+          hasErrors = true;
+          console.error(`Linking failed for Test Plan ${display}:`, err);
+        }
+        advanceStep();
+        stepIndex++;
       }
 
-      const linkingOperations: LinkingOperation[] = [
-        // Link to test plans
-        ...draft.xrayLinking.testPlanIds.map((testPlanId, i) => ({
-          label: `Test Plan ${draft.xrayLinking.testPlanDisplays[i]?.display || testPlanId}`,
-          promise: xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]),
-        })),
-        // Link to test executions
-        ...draft.xrayLinking.testExecutionIds.map((testExecutionId, i) => ({
-          label: `Test Execution ${draft.xrayLinking.testExecutionDisplays[i]?.display || testExecutionId}`,
-          promise: xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]),
-        })),
-        // Link to test sets
-        ...draft.xrayLinking.testSetIds.map((testSetId, i) => ({
-          label: `Test Set ${draft.xrayLinking.testSetDisplays[i]?.display || testSetId}`,
-          promise: xrayApi.addTestsToTestSet(testSetId, [testIssueId]),
-        })),
-      ];
+      // Link to test executions
+      for (let i = 0; i < draft.xrayLinking.testExecutionIds.length; i++) {
+        const stepId = `exec-${i}`;
+        const testExecutionId = draft.xrayLinking.testExecutionIds[i];
+        const display = draft.xrayLinking.testExecutionDisplays[i]?.display || testExecutionId;
 
-      // Add folder linking if configured
+        updateStep(stepId, 'in-progress');
+        try {
+          await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
+          updateStep(stepId, 'completed');
+          linkedItems.push({ label: display, type: 'execution' });
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          updateStep(stepId, 'failed', errorMsg);
+          hasErrors = true;
+          console.error(`Linking failed for Test Execution ${display}:`, err);
+        }
+        advanceStep();
+        stepIndex++;
+      }
+
+      // Link to test sets
+      for (let i = 0; i < draft.xrayLinking.testSetIds.length; i++) {
+        const stepId = `set-${i}`;
+        const testSetId = draft.xrayLinking.testSetIds[i];
+        const display = draft.xrayLinking.testSetDisplays[i]?.display || testSetId;
+
+        updateStep(stepId, 'in-progress');
+        try {
+          await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
+          updateStep(stepId, 'completed');
+          linkedItems.push({ label: display, type: 'set' });
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          updateStep(stepId, 'failed', errorMsg);
+          hasErrors = true;
+          console.error(`Linking failed for Test Set ${display}:`, err);
+        }
+        advanceStep();
+        stepIndex++;
+      }
+
+      // Link to folder
       if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
-        linkingOperations.push({
-          label: `Folder ${draft.xrayLinking.folderPath}`,
-          promise: xrayApi.addTestsToFolder(
+        updateStep('folder', 'in-progress');
+        try {
+          await xrayApi.addTestsToFolder(
             draft.xrayLinking.projectId,
             draft.xrayLinking.folderPath,
             [testIssueId]
-          ),
-        });
-      }
-
-      // Add preconditions linking if any
-      if (draft.xrayLinking.preconditionIds.length > 0) {
-        linkingOperations.push({
-          label: `Preconditions (${draft.xrayLinking.preconditionIds.length})`,
-          promise: xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds),
-        });
-      }
-
-      // Execute all linking operations in parallel using allSettled to capture all results
-      const results = await Promise.allSettled(linkingOperations.map(op => op.promise));
-
-      // Check for failures and warnings
-      const failures: string[] = [];
-      const warnings: string[] = [];
-
-      results.forEach((result, index) => {
-        const op = linkingOperations[index];
-        if (result.status === 'rejected') {
-          const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-          failures.push(`${op.label}: ${errorMsg}`);
-          console.error(`Linking failed for ${op.label}:`, result.reason);
-        } else if (result.status === 'fulfilled') {
-          const value = result.value;
-          if (value.warning) {
-            warnings.push(`${op.label}: ${value.warning}`);
-          }
-          // Check if anything was actually added
-          const addedCount = value.addedTests ?? value.addedPreconditions ?? 0;
-          if (addedCount === 0) {
-            warnings.push(`${op.label}: No items were linked (already linked or not found)`);
-          }
+          );
+          updateStep('folder', 'completed');
+          linkedItems.push({ label: draft.xrayLinking.folderPath, type: 'folder' });
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          updateStep('folder', 'failed', errorMsg);
+          hasErrors = true;
+          console.error(`Linking failed for Folder ${draft.xrayLinking.folderPath}:`, err);
         }
-      });
-
-      // Log warnings but don't fail the import
-      if (warnings.length > 0) {
-        console.warn('Linking warnings:', warnings);
+        advanceStep();
+        stepIndex++;
       }
 
-      // If there were failures, show them but still mark as imported since the TC was created
-      if (failures.length > 0) {
-        console.error('Some linking operations failed:', failures);
-        setErrors({ linking: `Some links failed: ${failures.join('; ')}` });
+      // Link preconditions
+      if (draft.xrayLinking.preconditionIds.length > 0) {
+        updateStep('preconditions', 'in-progress');
+        try {
+          await xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds);
+          updateStep('preconditions', 'completed');
+          linkedItems.push({ label: `${draft.xrayLinking.preconditionIds.length} precondition(s)`, type: 'precondition' });
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          updateStep('preconditions', 'failed', errorMsg);
+          hasErrors = true;
+          console.error('Linking failed for Preconditions:', err);
+        }
+        advanceStep();
       }
+
+      // Update final progress state
+      setImportProgress(prev => ({
+        ...prev,
+        linkedItems,
+        isComplete: true,
+        hasErrors,
+      }));
 
       // Update local state with imported info
       setDraft({
@@ -417,6 +563,11 @@ export function EditTestCase() {
     } catch (err) {
       console.error('Failed to import to Xray:', err);
       setErrors({ import: err instanceof Error ? err.message : 'Failed to import to Xray' });
+      setImportProgress(prev => ({
+        ...prev,
+        isComplete: true,
+        hasErrors: true,
+      }));
     } finally {
       setImporting(false);
     }
@@ -605,6 +756,184 @@ export function EditTestCase() {
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteModal(false)}
       />
+
+      {/* Import Progress Modal */}
+      <ImportProgressModal
+        progress={importProgress}
+        onClose={() => setImportProgress(prev => ({ ...prev, isOpen: false }))}
+      />
+    </div>
+  );
+}
+
+// Import Progress Modal Component
+function ImportProgressModal({
+  progress,
+  onClose,
+}: {
+  progress: ImportProgress;
+  onClose: () => void;
+}) {
+  if (!progress.isOpen) return null;
+
+  const completedSteps = progress.steps.filter(s => s.status === 'completed').length;
+  const totalSteps = progress.steps.length;
+  const percentComplete = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-card rounded-xl border border-border shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-border text-center">
+          <h2 className="text-lg font-semibold text-text-primary">Import to Xray</h2>
+          <p className="text-sm text-accent">Syncing test case to Xray Cloud</p>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          {!progress.isComplete ? (
+            <>
+              {/* Progress bar */}
+              <div className="mb-5">
+                <div className="flex justify-between text-xs text-text-muted mb-2">
+                  <span>Importing...</span>
+                  <span>{percentComplete}%</span>
+                </div>
+                <div className="h-2 bg-sidebar rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all duration-300 ease-out rounded-full"
+                    style={{ width: `${percentComplete}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Steps */}
+              <div className="space-y-3">
+                {progress.steps.map((step, index) => {
+                  // Only show steps that are in-progress, completed, or failed
+                  if (step.status === 'pending' && index > progress.currentStepIndex) return null;
+
+                  return (
+                    <div
+                      key={step.id}
+                      className="flex items-center gap-3 animate-fadeIn"
+                      style={{ animationDelay: `${index * 0.05}s` }}
+                    >
+                      {step.status === 'completed' ? (
+                        <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      ) : step.status === 'failed' ? (
+                        <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </div>
+                      ) : step.status === 'in-progress' ? (
+                        <div className="w-5 h-5 rounded-full border-2 border-accent border-t-transparent animate-spin flex-shrink-0" />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full border-2 border-text-muted flex-shrink-0" />
+                      )}
+                      <span className={`text-sm ${
+                        step.status === 'completed' ? 'text-text-muted' :
+                        step.status === 'failed' ? 'text-red-500' :
+                        step.status === 'in-progress' ? 'text-text-primary font-medium' :
+                        'text-text-muted'
+                      }`}>
+                        {step.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            /* Success/Complete State */
+            <div className="flex flex-col items-center py-4 animate-scaleIn">
+              {progress.hasErrors && !progress.testKey ? (
+                /* Full failure */
+                <>
+                  <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <span className="text-lg font-semibold text-text-primary">Import Failed</span>
+                  <span className="text-sm text-text-muted mt-1">Please check the errors and try again</span>
+                </>
+              ) : (
+                /* Success (possibly with some linking errors) */
+                <>
+                  <div className={`w-16 h-16 rounded-full ${progress.hasErrors ? 'bg-amber-500/20' : 'bg-green-500/20'} flex items-center justify-center mb-4`}>
+                    {progress.hasErrors ? (
+                      <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-lg font-semibold text-text-primary">
+                    {progress.hasErrors ? 'Import Complete (with warnings)' : 'Import Complete!'}
+                  </span>
+                  {progress.testKey && (
+                    <span className="text-sm text-text-muted mt-1">
+                      <span className="font-mono text-accent">{progress.testKey}</span> created in Jira
+                    </span>
+                  )}
+
+                  {/* Linked items badges */}
+                  {progress.linkedItems.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-4 justify-center">
+                      {progress.linkedItems.map((item, i) => (
+                        <span
+                          key={i}
+                          className="px-2 py-1 bg-accent/10 text-accent text-xs rounded"
+                        >
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Show failed steps if any */}
+                  {progress.hasErrors && (
+                    <div className="mt-4 w-full">
+                      <div className="text-xs text-text-muted mb-2">Failed operations:</div>
+                      <div className="space-y-1">
+                        {progress.steps.filter(s => s.status === 'failed').map(step => (
+                          <div key={step.id} className="flex items-center gap-2 text-xs text-red-500">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            <span>{step.label.replace('...', '')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer - only show when complete */}
+        {progress.isComplete && (
+          <div className="px-6 py-4 border-t border-border flex justify-center">
+            <button
+              onClick={onClose}
+              className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors font-medium"
+            >
+              {progress.testKey ? 'Done' : 'Close'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
