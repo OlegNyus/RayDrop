@@ -226,12 +226,20 @@ export function Dashboard() {
       {isConfigured && activeProject && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h3 className="text-lg font-semibold text-text-primary">Test Execution Status</h3>
+              <div>
+                <h3 className="text-lg font-semibold text-text-primary">Test Execution Status</h3>
+                <p className="text-xs text-text-muted flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
+                  Live from Xray
+                </p>
+              </div>
             </div>
 
             {/* Execution Selector - Custom Dropdown */}
@@ -488,7 +496,7 @@ function DonutChart({
   );
 }
 
-// Custom Execution Selector Dropdown
+// Custom Execution Selector Dropdown with Search
 function ExecutionSelector({
   executions,
   selectedId,
@@ -501,15 +509,26 @@ function ExecutionSelector({
   loading: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const selectedExec = executions.find(e => e.issueId === selectedId);
+
+  // Filter executions by search term
+  const filteredExecutions = search.trim()
+    ? executions.filter(exec =>
+        exec.key.toLowerCase().includes(search.toLowerCase()) ||
+        exec.summary.toLowerCase().includes(search.toLowerCase())
+      )
+    : executions;
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setSearch('');
       }
     };
 
@@ -517,15 +536,25 @@ function ExecutionSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Close on escape
+  // Close on escape, focus search on open
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        setSearch('');
+      }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, []);
+
+  // Focus search input when dropdown opens
+  useEffect(() => {
+    if (isOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isOpen]);
 
   const displayText = loading
     ? 'Loading...'
@@ -557,30 +586,60 @@ function ExecutionSelector({
       {/* Dropdown */}
       {isOpen && executions.length > 0 && (
         <div className="absolute top-full right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
-          <div className="max-h-64 overflow-y-auto py-1">
-            {executions.map((exec) => {
-              const isSelected = exec.issueId === selectedId;
-              return (
-                <button
-                  key={exec.issueId}
-                  onClick={() => {
-                    onSelect(exec.issueId);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-sidebar-hover transition-colors ${
-                    isSelected ? 'bg-accent/10 text-accent' : 'text-text-primary'
-                  }`}
-                >
-                  <span className="font-mono text-xs text-accent flex-shrink-0">{exec.key}</span>
-                  <span className="truncate flex-1">{exec.summary}</span>
-                  {isSelected && (
-                    <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              );
-            })}
+          {/* Search Input */}
+          <div className="p-2 border-b border-border">
+            <div className="relative">
+              <svg
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search executions..."
+                className="w-full pl-8 pr-3 py-1.5 text-sm bg-sidebar border border-border rounded-md text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              />
+            </div>
+          </div>
+
+          {/* Options List */}
+          <div className="max-h-56 overflow-y-auto py-1">
+            {filteredExecutions.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-text-muted text-center">
+                No executions match "{search}"
+              </div>
+            ) : (
+              filteredExecutions.map((exec) => {
+                const isSelected = exec.issueId === selectedId;
+                return (
+                  <button
+                    key={exec.issueId}
+                    onClick={() => {
+                      onSelect(exec.issueId);
+                      setIsOpen(false);
+                      setSearch('');
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-sidebar-hover transition-colors ${
+                      isSelected ? 'bg-accent/10 text-accent' : 'text-text-primary'
+                    }`}
+                  >
+                    <span className="font-mono text-xs text-accent flex-shrink-0">{exec.key}</span>
+                    <span className="truncate flex-1">{exec.summary}</span>
+                    {isSelected && (
+                      <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
       )}
