@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor, renderWithRouter } from '../helpers/render';
+import userEvent from '@testing-library/user-event';
 import { Dashboard } from '../../client/src/components/features/dashboard/Dashboard';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -170,18 +171,14 @@ describe('Dashboard', () => {
       });
     });
 
-    it('displays execution selector', async () => {
+    it('displays execution selector with loaded execution', async () => {
       renderWithRouter(<Dashboard />);
       await waitFor(() => {
-        const select = screen.getByRole('combobox');
-        expect(select).toBeInTheDocument();
-      });
-    });
-
-    it('shows execution options', async () => {
-      renderWithRouter(<Dashboard />);
-      await waitFor(() => {
-        expect(screen.getByText(/TEST-E1/)).toBeInTheDocument();
+        // Custom dropdown shows selected execution key and summary
+        expect(screen.getByText('Test Execution Status')).toBeInTheDocument();
+        // The execution key should be visible
+        const execKeys = screen.getAllByText(/TEST-E1/);
+        expect(execKeys.length).toBeGreaterThan(0);
       });
     });
 
@@ -347,6 +344,171 @@ describe('DonutChart', () => {
     await waitFor(() => {
       expect(screen.getByText('3')).toBeInTheDocument();
       expect(screen.getByText('Total')).toBeInTheDocument();
+    });
+  });
+});
+
+describe('ExecutionSelector', () => {
+  beforeEach(() => {
+    server.use(
+      http.get('*/api/config', () => {
+        return HttpResponse.json({
+          configured: true,
+          jiraBaseUrl: 'https://test.atlassian.net/',
+          hasCredentials: true,
+        });
+      }),
+      http.get('*/api/settings', () => {
+        return HttpResponse.json({
+          projects: ['TEST'],
+          hiddenProjects: [],
+          activeProject: 'TEST',
+          projectSettings: { TEST: { color: '#3B82F6' } },
+        });
+      }),
+      http.get('*/api/drafts', () => {
+        return HttpResponse.json([
+          { id: '1', summary: 'Test', status: 'new', projectKey: 'TEST', steps: [], labels: [], createdAt: '', updatedAt: '' },
+        ]);
+      }),
+      http.get('*/api/xray/test-executions/*', () => {
+        return HttpResponse.json([
+          { issueId: 'exec-1', key: 'TEST-E1', summary: 'Sprint 1 Execution' },
+          { issueId: 'exec-2', key: 'TEST-E2', summary: 'Sprint 2 Execution' },
+          { issueId: 'exec-3', key: 'TEST-E3', summary: 'Regression Suite' },
+        ]);
+      }),
+      http.get('*/api/xray/test-execution/*/status', () => {
+        return HttpResponse.json({
+          issueId: 'exec-1',
+          key: 'TEST-E1',
+          summary: 'Sprint 1 Execution',
+          totalTests: 10,
+          statuses: [{ status: 'PASS', count: 10, color: '#22C55E' }],
+        });
+      }),
+      http.get('*/api/xray/tests/by-status/*', () => HttpResponse.json([]))
+    );
+  });
+
+  it('opens dropdown when clicking selector button', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select test execution')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText('Select test execution'));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search executions...')).toBeInTheDocument();
+    });
+  });
+
+  it('filters executions by search term', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select test execution')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText('Select test execution'));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search executions...')).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText('Search executions...'), 'Regression');
+
+    await waitFor(() => {
+      // Should show Regression Suite
+      expect(screen.getByText('Regression Suite')).toBeInTheDocument();
+      // Should not show Sprint executions in the dropdown options
+      const sprintOptions = screen.queryAllByRole('option').filter(
+        el => el.textContent?.includes('Sprint')
+      );
+      expect(sprintOptions.length).toBe(0);
+    });
+  });
+
+  it('shows no results message when search has no matches', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select test execution')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText('Select test execution'));
+    await user.type(screen.getByPlaceholderText('Search executions...'), 'nonexistent');
+
+    await waitFor(() => {
+      expect(screen.getByText(/No executions match "nonexistent"/)).toBeInTheDocument();
+    });
+  });
+
+  it('closes dropdown on Escape key', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select test execution')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText('Select test execution'));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search executions...')).toBeInTheDocument();
+    });
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText('Search executions...')).not.toBeInTheDocument();
+    });
+  });
+
+  it('selects execution with Enter key after arrow navigation', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select test execution')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText('Select test execution'));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search executions...')).toBeInTheDocument();
+    });
+
+    // Navigate down to second item and select
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    // Dropdown should close and selection should change
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText('Search executions...')).not.toBeInTheDocument();
+    });
+  });
+
+  it('has proper accessibility attributes', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<Dashboard />);
+
+    await waitFor(() => {
+      const button = screen.getByLabelText('Select test execution');
+      expect(button).toHaveAttribute('aria-haspopup', 'listbox');
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    await user.click(screen.getByLabelText('Select test execution'));
+
+    await waitFor(() => {
+      const button = screen.getByLabelText('Select test execution');
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('listbox')).toBeInTheDocument();
     });
   });
 });
