@@ -510,8 +510,10 @@ function ExecutionSelector({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const selectedExec = executions.find(e => e.issueId === selectedId);
 
@@ -523,31 +525,59 @@ function ExecutionSelector({
       )
     : executions;
 
-  // Close dropdown when clicking outside
+  // Reset highlighted index when filtered results change
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [search]);
+
+  // Close dropdown and handle keyboard navigation
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
         setSearch('');
+        setHighlightedIndex(0);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isOpen) return;
+
+      switch (event.key) {
+        case 'Escape':
+          setIsOpen(false);
+          setSearch('');
+          setHighlightedIndex(0);
+          break;
+        case 'ArrowDown':
+          event.preventDefault();
+          setHighlightedIndex(prev =>
+            prev < filteredExecutions.length - 1 ? prev + 1 : prev
+          );
+          break;
+        case 'ArrowUp':
+          event.preventDefault();
+          setHighlightedIndex(prev => prev > 0 ? prev - 1 : 0);
+          break;
+        case 'Enter':
+          event.preventDefault();
+          if (filteredExecutions[highlightedIndex]) {
+            onSelect(filteredExecutions[highlightedIndex].issueId);
+            setIsOpen(false);
+            setSearch('');
+            setHighlightedIndex(0);
+          }
+          break;
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Close on escape, focus search on open
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-        setSearch('');
-      }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
     };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, []);
+  }, [isOpen, filteredExecutions, highlightedIndex, onSelect]);
 
   // Focus search input when dropdown opens
   useEffect(() => {
@@ -555,6 +585,16 @@ function ExecutionSelector({
       searchInputRef.current.focus();
     }
   }, [isOpen]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (isOpen && listRef.current) {
+      const highlightedElement = listRef.current.children[highlightedIndex] as HTMLElement;
+      if (highlightedElement) {
+        highlightedElement.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [highlightedIndex, isOpen]);
 
   const displayText = loading
     ? 'Loading...'
@@ -570,6 +610,9 @@ function ExecutionSelector({
       <button
         onClick={() => !loading && executions.length > 0 && setIsOpen(!isOpen)}
         disabled={loading || executions.length === 0}
+        aria-label="Select test execution"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className="flex items-center gap-2 px-3 py-1.5 text-sm bg-sidebar border border-border rounded-lg text-text-primary hover:bg-sidebar-hover focus:outline-none focus:ring-2 focus:ring-accent/50 max-w-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         <span className="truncate max-w-[200px]">{displayText}</span>
@@ -585,7 +628,11 @@ function ExecutionSelector({
 
       {/* Dropdown */}
       {isOpen && executions.length > 0 && (
-        <div className="absolute top-full right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div
+          className="absolute top-full right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden"
+          role="listbox"
+          aria-label="Test executions"
+        >
           {/* Search Input */}
           <div className="p-2 border-b border-border">
             <div className="relative">
@@ -603,31 +650,37 @@ function ExecutionSelector({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search executions..."
+                aria-label="Search executions"
                 className="w-full pl-8 pr-3 py-1.5 text-sm bg-sidebar border border-border rounded-md text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               />
             </div>
           </div>
 
           {/* Options List */}
-          <div className="max-h-56 overflow-y-auto py-1">
+          <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
             {filteredExecutions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-text-muted text-center">
                 No executions match "{search}"
               </div>
             ) : (
-              filteredExecutions.map((exec) => {
+              filteredExecutions.map((exec, index) => {
                 const isSelected = exec.issueId === selectedId;
+                const isHighlighted = index === highlightedIndex;
                 return (
                   <button
                     key={exec.issueId}
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => {
                       onSelect(exec.issueId);
                       setIsOpen(false);
                       setSearch('');
+                      setHighlightedIndex(0);
                     }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-sidebar-hover transition-colors ${
-                      isSelected ? 'bg-accent/10 text-accent' : 'text-text-primary'
-                    }`}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                      isHighlighted ? 'bg-sidebar-hover' : ''
+                    } ${isSelected ? 'bg-accent/10 text-accent' : 'text-text-primary'}`}
                   >
                     <span className="font-mono text-xs text-accent flex-shrink-0">{exec.key}</span>
                     <span className="truncate flex-1">{exec.summary}</span>
