@@ -28,11 +28,12 @@ interface ImportStep {
 
 interface ImportProgress {
   isOpen: boolean;
-  phase: 'confirming' | 'importing' | 'complete';
+  phase: 'importing' | 'complete';
   steps: ImportStep[];
   currentStepIndex: number;
   testKey: string | null;
   linkedItems: { label: string; type: 'plan' | 'execution' | 'set' | 'folder' | 'precondition' }[];
+  failedItems: { label: string; error: string }[];
   isComplete: boolean;
   hasErrors: boolean;
 }
@@ -65,11 +66,12 @@ export function EditTestCase() {
   const [deleting, setDeleting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress>({
     isOpen: false,
-    phase: 'confirming',
+    phase: 'importing',
     steps: [],
     currentStepIndex: -1,
     testKey: null,
     linkedItems: [],
+    failedItems: [],
     isComplete: false,
     hasErrors: false,
   });
@@ -374,41 +376,30 @@ export function EditTestCase() {
     return progressSteps;
   }, [draft]);
 
-  // Show confirmation modal before import
-  const handleImportToXray = () => {
+  // Start import immediately with progress modal
+  const handleImportToXray = async () => {
     if (!draft || !activeProject) return;
     if (!validateStep1()) { setCurrentStep(1); return; }
     if (!validateStep2()) { setCurrentStep(2); return; }
     setShowXrayValidation(true);
     if (!isStep3Valid()) { setCurrentStep(3); return; }
 
-    // Show confirmation modal
-    setImportProgress({
-      isOpen: true,
-      phase: 'confirming',
-      steps: buildProgressSteps(),
-      currentStepIndex: -1,
-      testKey: null,
-      linkedItems: [],
-      isComplete: false,
-      hasErrors: false,
-    });
-  };
-
-  // Execute the actual import after confirmation
-  const executeImport = async () => {
-    if (!draft || !activeProject) return;
-
     setImporting(true);
     setErrors({});
     setImportSuccess(null);
 
-    // Start importing phase
-    setImportProgress(prev => ({
-      ...prev,
+    // Open modal and start importing immediately
+    setImportProgress({
+      isOpen: true,
       phase: 'importing',
+      steps: buildProgressSteps(),
       currentStepIndex: 0,
-    }));
+      testKey: null,
+      linkedItems: [],
+      failedItems: [],
+      isComplete: false,
+      hasErrors: false,
+    });
 
     // Helper to update a specific step
     const updateStep = (stepId: string, status: ImportStep['status'], error?: string) => {
@@ -427,6 +418,7 @@ export function EditTestCase() {
     };
 
     const linkedItems: ImportProgress['linkedItems'] = [];
+    const failedItems: ImportProgress['failedItems'] = [];
     let hasErrors = false;
 
     try {
@@ -468,6 +460,7 @@ export function EditTestCase() {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep(stepId, 'failed', errorMsg);
+          failedItems.push({ label: `Test Plan: ${display}`, error: errorMsg });
           hasErrors = true;
           console.error(`Linking failed for Test Plan ${display}:`, err);
         }
@@ -488,6 +481,7 @@ export function EditTestCase() {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep(stepId, 'failed', errorMsg);
+          failedItems.push({ label: `Test Execution: ${display}`, error: errorMsg });
           hasErrors = true;
           console.error(`Linking failed for Test Execution ${display}:`, err);
         }
@@ -508,6 +502,7 @@ export function EditTestCase() {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep(stepId, 'failed', errorMsg);
+          failedItems.push({ label: `Test Set: ${display}`, error: errorMsg });
           hasErrors = true;
           console.error(`Linking failed for Test Set ${display}:`, err);
         }
@@ -528,6 +523,7 @@ export function EditTestCase() {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep('folder', 'failed', errorMsg);
+          failedItems.push({ label: `Folder: ${draft.xrayLinking.folderPath}`, error: errorMsg });
           hasErrors = true;
           console.error(`Linking failed for Folder ${draft.xrayLinking.folderPath}:`, err);
         }
@@ -544,6 +540,7 @@ export function EditTestCase() {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep('preconditions', 'failed', errorMsg);
+          failedItems.push({ label: 'Preconditions', error: errorMsg });
           hasErrors = true;
           console.error('Linking failed for Preconditions:', err);
         }
@@ -555,6 +552,7 @@ export function EditTestCase() {
         ...prev,
         phase: 'complete',
         linkedItems,
+        failedItems,
         isComplete: true,
         hasErrors,
       }));
@@ -777,7 +775,6 @@ export function EditTestCase() {
       {/* Import Progress Modal */}
       <ImportProgressModal
         progress={importProgress}
-        onConfirm={executeImport}
         onClose={() => setImportProgress(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
@@ -787,58 +784,32 @@ export function EditTestCase() {
 // Import Progress Modal Component
 function ImportProgressModal({
   progress,
-  onConfirm,
   onClose,
 }: {
   progress: ImportProgress;
-  onConfirm: () => void;
   onClose: () => void;
 }) {
   if (!progress.isOpen) return null;
 
   const completedSteps = progress.steps.filter(s => s.status === 'completed').length;
+  const failedSteps = progress.steps.filter(s => s.status === 'failed').length;
   const totalSteps = progress.steps.length;
-  const percentComplete = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+  const percentComplete = totalSteps > 0 ? Math.round(((completedSteps + failedSteps) / totalSteps) * 100) : 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-card rounded-xl border border-border shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-border text-center relative">
-          <h2 className="text-lg font-semibold text-text-primary">Import to Xray</h2>
+        <div className="px-6 py-4 border-b border-border text-center">
+          <h2 className="text-lg font-semibold text-text-primary">One-Click Import</h2>
           <p className="text-sm text-accent">Seamless sync to Xray Cloud</p>
-          {progress.phase === 'confirming' && (
-            <button
-              onClick={onClose}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
         </div>
 
-        {/* Content - Fixed height */}
-        <div className="p-6 h-[280px] flex flex-col">
-          {progress.phase === 'confirming' ? (
-            /* Confirmation State */
-            <div className="flex flex-col h-full">
-              <div className="flex-1 overflow-y-auto">
-                <p className="text-sm text-text-muted mb-4">The following operations will be performed:</p>
-                <div className="space-y-2">
-                  {progress.steps.map((step) => (
-                    <div key={step.id} className="flex items-center gap-3">
-                      <div className="w-5 h-5 rounded-full border-2 border-text-muted flex-shrink-0" />
-                      <span className="text-sm text-text-primary">{step.label.replace('...', '')}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : progress.phase === 'importing' ? (
+        {/* Content */}
+        <div className="p-6">
+          {progress.phase === 'importing' ? (
             /* Importing State */
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col">
               {/* Progress bar */}
               <div className="mb-4">
                 <div className="flex justify-between text-xs text-text-muted mb-2">
@@ -853,8 +824,8 @@ function ImportProgressModal({
                 </div>
               </div>
 
-              {/* Steps - Scrollable */}
-              <div className="flex-1 overflow-y-auto space-y-2">
+              {/* Steps */}
+              <div className="space-y-2 max-h-[200px] overflow-y-auto">
                 {progress.steps.map((step, index) => {
                   // Only show steps that are in-progress, completed, or failed
                   if (step.status === 'pending' && index > progress.currentStepIndex) return null;
@@ -883,7 +854,7 @@ function ImportProgressModal({
                         <div className="w-5 h-5 rounded-full border-2 border-text-muted flex-shrink-0" />
                       )}
                       <span className={`text-sm ${
-                        step.status === 'completed' ? 'text-text-muted' :
+                        step.status === 'completed' ? 'text-green-600 dark:text-green-400' :
                         step.status === 'failed' ? 'text-red-500' :
                         step.status === 'in-progress' ? 'text-text-primary font-medium' :
                         'text-text-muted'
@@ -897,35 +868,73 @@ function ImportProgressModal({
             </div>
           ) : (
             /* Complete State */
-            <div className="flex flex-col items-center justify-center h-full animate-scaleIn">
+            <div className="flex flex-col items-center text-center animate-scaleIn">
               {progress.hasErrors && !progress.testKey ? (
-                /* Full failure */
+                /* Full failure - Test creation failed */
                 <>
                   <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <span className="text-lg font-semibold text-red-500">Import Failed</span>
+                  <span className="text-sm text-text-muted mt-2">
+                    Failed to create test case in Jira. Please check your connection and try again.
+                  </span>
+                </>
+              ) : progress.hasErrors && progress.testKey ? (
+                /* Partial success - Test created but some links failed */
+                <>
+                  <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                   </div>
-                  <span className="text-lg font-semibold text-text-primary">Import Failed</span>
-                  <span className="text-sm text-text-muted mt-1">Please check the errors and try again</span>
+                  <span className="text-lg font-semibold text-amber-500">Imported with Warnings</span>
+                  <span className="text-sm text-text-muted mt-1">
+                    <span className="font-mono text-accent">{progress.testKey}</span> created in Jira
+                  </span>
+
+                  {/* Success badges */}
+                  {progress.linkedItems.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3 justify-center">
+                      {progress.linkedItems.slice(0, 3).map((item, i) => (
+                        <span key={i} className="px-2 py-1 bg-green-500/10 text-green-600 dark:text-green-400 text-xs rounded">
+                          {item.label}
+                        </span>
+                      ))}
+                      {progress.linkedItems.length > 3 && (
+                        <span className="px-2 py-1 bg-sidebar text-text-muted text-xs rounded">
+                          +{progress.linkedItems.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Failed items */}
+                  {progress.failedItems.length > 0 && (
+                    <div className="mt-3 w-full">
+                      <p className="text-xs text-red-500 font-medium mb-2">Failed to link:</p>
+                      <div className="space-y-1 text-left max-h-[80px] overflow-y-auto">
+                        {progress.failedItems.map((item, i) => (
+                          <div key={i} className="text-xs text-red-400 flex items-start gap-2">
+                            <span className="flex-shrink-0">•</span>
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
-                /* Success */
+                /* Full success */
                 <>
-                  <div className={`w-16 h-16 rounded-full ${progress.hasErrors ? 'bg-amber-500/20' : 'bg-green-500/20'} flex items-center justify-center mb-4`}>
-                    {progress.hasErrors ? (
-                      <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    )}
+                  <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                   </div>
-                  <span className="text-lg font-semibold text-text-primary">
-                    {progress.hasErrors ? 'Import Complete!' : 'Import Complete!'}
-                  </span>
+                  <span className="text-lg font-semibold text-green-500">Import Complete!</span>
                   {progress.testKey && (
                     <span className="text-sm text-text-muted mt-1">
                       <span className="font-mono text-accent">{progress.testKey}</span> created in Jira
@@ -938,7 +947,7 @@ function ImportProgressModal({
                       {progress.linkedItems.slice(0, 4).map((item, i) => (
                         <span
                           key={i}
-                          className="px-2 py-1 bg-accent/10 text-accent text-xs rounded"
+                          className="px-2 py-1 bg-green-500/10 text-green-600 dark:text-green-400 text-xs rounded"
                         >
                           {item.label}
                         </span>
@@ -956,32 +965,17 @@ function ImportProgressModal({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-border flex justify-center gap-3">
-          {progress.phase === 'confirming' ? (
-            <>
-              <button
-                onClick={onClose}
-                className="px-6 py-2 border border-border text-text-primary rounded-lg hover:bg-sidebar transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={onConfirm}
-                className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors font-medium"
-              >
-                Import
-              </button>
-            </>
-          ) : progress.phase === 'complete' ? (
+        {/* Footer - Only show when complete */}
+        {progress.phase === 'complete' && (
+          <div className="px-6 py-4 border-t border-border flex justify-center">
             <button
               onClick={onClose}
               className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors font-medium"
             >
               Done
             </button>
-          ) : null}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

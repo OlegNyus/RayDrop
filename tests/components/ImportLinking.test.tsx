@@ -75,19 +75,15 @@ async function navigateToStep3() {
   });
 }
 
-// Helper to click Import and confirm in the modal
-async function clickImportAndConfirm() {
-  // Click "Import to Xray" button
+// Helper to click Import (starts immediately, no confirmation needed)
+async function clickImport() {
+  // Click "Import to Xray" button - import starts immediately
   fireEvent.click(screen.getByText('Import to Xray'));
 
-  // Wait for confirmation modal to appear
+  // Wait for progress modal to appear
   await waitFor(() => {
-    expect(screen.getByText('The following operations will be performed:')).toBeInTheDocument();
+    expect(screen.getByText('One-Click Import')).toBeInTheDocument();
   });
-
-  // Click "Import" button in the modal to confirm
-  const importButton = screen.getByRole('button', { name: 'Import' });
-  fireEvent.click(importButton);
 }
 
 describe('Import and Linking', () => {
@@ -212,7 +208,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       // Wait for success
       await waitFor(() => {
@@ -283,7 +279,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       // Should still show success (TC was created)
       await waitFor(() => {
@@ -344,7 +340,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       // Wait for import to complete
       await waitFor(() => {
@@ -400,7 +396,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       // Should still succeed
       await waitFor(() => {
@@ -430,7 +426,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       // Should show error in the modal's complete state (Import Failed)
       await waitFor(() => {
@@ -499,7 +495,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       await waitFor(() => {
         expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
@@ -726,7 +722,7 @@ describe('Import and Linking', () => {
       await navigateToStep3();
 
       // Click Import and confirm in modal
-      await clickImportAndConfirm();
+      await clickImport();
 
       // Success - test key shown
       await waitFor(() => {
