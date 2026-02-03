@@ -212,7 +212,7 @@ describe('Import and Linking', () => {
 
       // Wait for success
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Verify all linking endpoints were called
@@ -283,7 +283,7 @@ describe('Import and Linking', () => {
 
       // Should still show success (TC was created)
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Other links should have been attempted
@@ -344,7 +344,7 @@ describe('Import and Linking', () => {
 
       // Wait for import to complete
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Verify ALL linking operations were attempted despite failures
@@ -400,7 +400,7 @@ describe('Import and Linking', () => {
 
       // Should still succeed
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
   });
@@ -498,7 +498,7 @@ describe('Import and Linking', () => {
       await clickImport();
 
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Preconditions should NOT have been called
@@ -726,7 +726,7 @@ describe('Import and Linking', () => {
 
       // Success - test key shown
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
   });
@@ -859,6 +859,201 @@ describe('Import and Linking', () => {
       // Update Draft button should be enabled because step has content (action: 'Do something')
       const updateDraftButton = screen.getByText('Update Draft');
       expect(updateDraftButton).not.toBeDisabled();
+    });
+  });
+
+  describe('Import Progress Modal', () => {
+    it('shows modal with title and subtitle when import starts', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      // Click Import - modal should open immediately
+      fireEvent.click(screen.getByText('Import to Xray'));
+
+      // Modal should be visible with title and subtitle
+      await waitFor(() => {
+        expect(screen.getByText('One-Click Import')).toBeInTheDocument();
+        expect(screen.getByText('Seamless sync to Xray Cloud')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Import Complete with test key on success', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Should show success state
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should show test key
+      expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
+
+      // Should show "created in Jira" message
+      expect(screen.getByText(/created in Jira/)).toBeInTheDocument();
+
+      // Should show Done button
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    });
+
+    it('shows Imported with Warnings on partial failure', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        // First test plan succeeds
+        http.post('*/api/xray/test-plans/10001/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        // Second test plan fails
+        http.post('*/api/xray/test-plans/10002/add-tests', () => {
+          return HttpResponse.json({ error: 'Permission denied' }, { status: 500 });
+        }),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Should show partial success state
+      await waitFor(() => {
+        expect(screen.getByText('Imported with Warnings')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should still show test key
+      expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
+
+      // Should show "Failed to link" section
+      expect(screen.getByText('Failed to link:')).toBeInTheDocument();
+    });
+
+    it('closes modal and shows imported view when Done is clicked', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Click Done button
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+      // Modal should close and imported view should show
+      await waitFor(() => {
+        expect(screen.queryByText('One-Click Import')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows linked items badges on success', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should show linked items as badges (test plan displays from mock)
+      await waitFor(() => {
+        // Check for at least one linked item badge
+        const badges = screen.getAllByText(/WCP-7067|WCP-7069|WCP-7154/);
+        expect(badges.length).toBeGreaterThan(0);
+      });
     });
   });
 });

@@ -643,8 +643,8 @@ export function EditTestCase() {
     );
   }
 
-  // Show read-only view for imported test cases
-  if (draft.status === 'imported') {
+  // Show read-only view for imported test cases (but keep modal visible until closed)
+  if (draft.status === 'imported' && !importProgress.isOpen) {
     return <ImportedTestCaseView draft={draft} />;
   }
 
