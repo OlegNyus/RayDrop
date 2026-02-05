@@ -985,7 +985,7 @@ describe('Import and Linking', () => {
       // Modal should be visible with title and subtitle
       await waitFor(() => {
         expect(screen.getByText('One-Click Import')).toBeInTheDocument();
-        expect(screen.getByText('Sync to Xray Cloud')).toBeInTheDocument();
+        expect(screen.getByText('Seamless sync to Xray Cloud')).toBeInTheDocument();
       });
     });
 
