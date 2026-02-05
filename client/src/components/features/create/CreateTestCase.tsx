@@ -4,7 +4,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, StatusBadge, ImportProgressModal } from '../../ui';
-import { draftsApi, settingsApi } from '../../../services/api';
+import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
 import type { Draft, TestStep, ProjectSettings } from '../../../types';
 import {
   type Step,
