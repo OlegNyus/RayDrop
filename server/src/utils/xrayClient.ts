@@ -1069,6 +1069,91 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
   };
 }
 
+// ============ Get Test With All Links (for validation) ============
+
+export interface TestLinks {
+  issueId: string;
+  key: string;
+  testPlans: Array<{ issueId: string; key: string }>;
+  testExecutions: Array<{ issueId: string; key: string }>;
+  testSets: Array<{ issueId: string; key: string }>;
+  preconditions: Array<{ issueId: string; key: string }>;
+  folder?: string;
+}
+
+export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
+  const query = `
+    query GetTestWithLinks($issueId: String!) {
+      getTest(issueId: $issueId) {
+        issueId
+        jira(fields: ["key"])
+        folder {
+          path
+        }
+        testPlans(limit: 100) {
+          results {
+            issueId
+            jira(fields: ["key"])
+          }
+        }
+        testSets(limit: 100) {
+          results {
+            issueId
+            jira(fields: ["key"])
+          }
+        }
+        testExecutions(limit: 100) {
+          results {
+            issueId
+            jira(fields: ["key"])
+          }
+        }
+        preconditions(limit: 100) {
+          results {
+            issueId
+            jira(fields: ["key"])
+          }
+        }
+      }
+    }
+  `;
+
+  interface LinkedEntity {
+    issueId: string;
+    jira?: { key: string };
+  }
+
+  interface Result {
+    getTest: {
+      issueId: string;
+      jira?: { key: string };
+      folder?: { path: string };
+      testPlans?: { results: LinkedEntity[] };
+      testSets?: { results: LinkedEntity[] };
+      testExecutions?: { results: LinkedEntity[] };
+      preconditions?: { results: LinkedEntity[] };
+    };
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId });
+  const test = data.getTest;
+
+  const mapEntity = (e: LinkedEntity) => ({
+    issueId: e.issueId,
+    key: e.jira?.key || '',
+  });
+
+  return {
+    issueId: test.issueId,
+    key: test.jira?.key || '',
+    testPlans: (test.testPlans?.results || []).map(mapEntity),
+    testExecutions: (test.testExecutions?.results || []).map(mapEntity),
+    testSets: (test.testSets?.results || []).map(mapEntity),
+    preconditions: (test.preconditions?.results || []).map(mapEntity),
+    folder: test.folder?.path,
+  };
+}
+
 // ============ Get Precondition Details ============
 
 export interface PreconditionDetails {

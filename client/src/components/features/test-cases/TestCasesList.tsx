@@ -10,10 +10,28 @@ type SortOrder = 'asc' | 'desc';
 
 const VALID_STATUSES: TestCaseStatus[] = ['new', 'draft', 'ready', 'imported'];
 
+// Bulk Import progress tracking types
+interface BulkImportItem {
+  id: string;
+  summary: string;
+  status: 'pending' | 'in-progress' | 'completed' | 'failed';
+  testKey?: string;
+  error?: string;
+}
+
+interface BulkImportProgress {
+  isOpen: boolean;
+  phase: 'importing' | 'complete';
+  items: BulkImportItem[];
+  currentIndex: number;
+  isComplete: boolean;
+  hasErrors: boolean;
+}
+
 export function TestCasesList() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { drafts, refreshDrafts } = useApp();
+  const { drafts, refreshDrafts, config } = useApp();
   const [search, setSearch] = useState('');
 
   // Initialize status filter from URL query param
@@ -44,8 +62,17 @@ export function TestCasesList() {
   // Bulk action states
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
-  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Bulk import progress modal state
+  const [bulkImportProgress, setBulkImportProgress] = useState<BulkImportProgress>({
+    isOpen: false,
+    phase: 'importing',
+    items: [],
+    currentIndex: -1,
+    isComplete: false,
+    hasErrors: false,
+  });
 
   const filteredDrafts = useMemo(() => {
     let result = [...drafts];
@@ -222,19 +249,88 @@ export function TestCasesList() {
   };
 
   const handleBulkImport = async () => {
+    const itemsToImport = selectedByStatus.ready;
+    if (itemsToImport.length === 0) return;
+
+    // Initialize progress modal
+    const initialItems: BulkImportItem[] = itemsToImport.map(d => ({
+      id: d.id,
+      summary: d.summary || 'Untitled',
+      status: 'pending' as const,
+    }));
+
+    setBulkImportProgress({
+      isOpen: true,
+      phase: 'importing',
+      items: initialItems,
+      currentIndex: 0,
+      isComplete: false,
+      hasErrors: false,
+    });
+
     setBulkImporting(true);
-    try {
-      // Import all ready items to Xray using the existing bulk import API
-      const draftIds = selectedByStatus.ready.map(d => d.id);
-      await xrayApi.import(draftIds);
-      await refreshDrafts();
-      setSelectedIds(new Set());
-      setShowBulkImportModal(false);
-    } catch (err) {
-      console.error('Failed to bulk import:', err);
-    } finally {
-      setBulkImporting(false);
+    let hasErrors = false;
+
+    // Import each item one by one
+    for (let i = 0; i < itemsToImport.length; i++) {
+      const draft = itemsToImport[i];
+
+      // Update current item to in-progress
+      setBulkImportProgress(prev => ({
+        ...prev,
+        currentIndex: i,
+        items: prev.items.map((item, idx) =>
+          idx === i ? { ...item, status: 'in-progress' as const } : item
+        ),
+      }));
+
+      try {
+        // Import single draft
+        const result = await xrayApi.import([draft.id]);
+        const testKey = result.testKeys?.[0];
+
+        // Update item to completed
+        setBulkImportProgress(prev => ({
+          ...prev,
+          items: prev.items.map((item, idx) =>
+            idx === i ? { ...item, status: 'completed' as const, testKey } : item
+          ),
+        }));
+      } catch (err) {
+        hasErrors = true;
+        const errorMsg = err instanceof Error ? err.message : String(err);
+
+        // Update item to failed
+        setBulkImportProgress(prev => ({
+          ...prev,
+          items: prev.items.map((item, idx) =>
+            idx === i ? { ...item, status: 'failed' as const, error: errorMsg } : item
+          ),
+        }));
+        console.error(`Failed to import "${draft.summary}":`, err);
+      }
+
+      // Small delay between imports for visual feedback
+      if (i < itemsToImport.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
     }
+
+    // Mark as complete
+    setBulkImportProgress(prev => ({
+      ...prev,
+      phase: 'complete',
+      isComplete: true,
+      hasErrors,
+    }));
+
+    await refreshDrafts();
+    setSelectedIds(new Set());
+    setBulkImporting(false);
+  };
+
+  const closeBulkImportModal = () => {
+    setBulkImportProgress(prev => ({ ...prev, isOpen: false }));
   };
 
   return (
@@ -325,7 +421,7 @@ export function TestCasesList() {
               {/* Show "Import to Xray" for ready items */}
               {selectedByStatus.ready.length > 0 && (
                 <Button
-                  onClick={() => setShowBulkImportModal(true)}
+                  onClick={handleBulkImport}
                   disabled={bulkImporting}
                 >
                   {bulkImporting ? 'Importing...' : `Import ${selectedByStatus.ready.length} to Xray`}
@@ -438,15 +534,11 @@ export function TestCasesList() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* Bulk Import Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showBulkImportModal}
-        title="Import to Xray"
-        message={`Import ${selectedByStatus.ready.length} test case${selectedByStatus.ready.length > 1 ? 's' : ''} to Xray?`}
-        confirmLabel={bulkImporting ? 'Importing...' : `Import ${selectedByStatus.ready.length} Test${selectedByStatus.ready.length > 1 ? 's' : ''}`}
-        variant="default"
-        onConfirm={handleBulkImport}
-        onCancel={() => setShowBulkImportModal(false)}
+      {/* Bulk Import Progress Modal */}
+      <BulkImportProgressModal
+        progress={bulkImportProgress}
+        onClose={closeBulkImportModal}
+        jiraBaseUrl={config?.jiraBaseUrl}
       />
     </div>
   );
@@ -518,5 +610,221 @@ function TestCaseRow({
         </div>
       </div>
     </Card>
+  );
+}
+
+// Bulk Import Progress Modal Component
+function BulkImportProgressModal({
+  progress,
+  onClose,
+  jiraBaseUrl,
+}: {
+  progress: BulkImportProgress;
+  onClose: () => void;
+  jiraBaseUrl?: string;
+}) {
+  if (!progress.isOpen) return null;
+
+  const completedCount = progress.items.filter(i => i.status === 'completed').length;
+  const failedCount = progress.items.filter(i => i.status === 'failed').length;
+  const totalCount = progress.items.length;
+  const percentComplete = totalCount > 0 ? Math.round(((completedCount + failedCount) / totalCount) * 100) : 0;
+
+  const successItems = progress.items.filter(i => i.status === 'completed' && i.testKey);
+  const failedItems = progress.items.filter(i => i.status === 'failed');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" />
+
+      {/* Modal */}
+      <div className="relative bg-card rounded-xl shadow-2xl w-full max-w-md border border-border animate-scaleIn">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-border text-center">
+          <h2 className="text-lg font-semibold text-text-primary">Bulk Import to Xray</h2>
+          <p className="text-sm text-accent">Importing {totalCount} test case{totalCount > 1 ? 's' : ''}</p>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-6 h-[320px] flex flex-col">
+          {progress.phase === 'importing' ? (
+            /* Importing phase */
+            <>
+              {/* Progress bar */}
+              <div className="mb-4">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-text-muted">Progress</span>
+                  <span className="text-accent font-medium">{percentComplete}%</span>
+                </div>
+                <div className="h-2 bg-sidebar rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all duration-300"
+                    style={{ width: `${percentComplete}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Items list */}
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {progress.items.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
+                      item.status === 'in-progress' ? 'bg-accent/10' : ''
+                    }`}
+                  >
+                    {/* Status icon */}
+                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                      {item.status === 'pending' && (
+                        <div className="w-2 h-2 rounded-full bg-text-muted" />
+                      )}
+                      {item.status === 'in-progress' && (
+                        <svg className="w-5 h-5 text-accent animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      )}
+                      {item.status === 'completed' && (
+                        <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                      {item.status === 'failed' && (
+                        <svg className="w-5 h-5 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                    </div>
+
+                    {/* Item info */}
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm truncate block ${
+                        item.status === 'in-progress' ? 'text-accent font-medium' :
+                        item.status === 'completed' ? 'text-success' :
+                        item.status === 'failed' ? 'text-error' :
+                        'text-text-muted'
+                      }`}>
+                        {item.summary}
+                      </span>
+                      {item.testKey && (
+                        <span className="text-xs text-text-muted">{item.testKey}</span>
+                      )}
+                      {item.error && (
+                        <span className="text-xs text-error">{item.error}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            /* Complete phase */
+            <div className="flex-1 flex flex-col items-center justify-center text-center">
+              {progress.hasErrors ? (
+                /* Partial success */
+                <>
+                  <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <span className="text-lg font-semibold text-amber-500">Import Completed with Errors</span>
+                  <span className="text-sm text-text-muted mt-1">
+                    {completedCount} of {totalCount} imported successfully
+                  </span>
+
+                  {/* Success links */}
+                  {successItems.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-4 justify-center max-h-[60px] overflow-y-auto">
+                      {successItems.map((item, i) => (
+                        item.testKey && jiraBaseUrl ? (
+                          <a
+                            key={i}
+                            href={`${jiraBaseUrl}browse/${item.testKey}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
+                          >
+                            {item.testKey}
+                          </a>
+                        ) : (
+                          <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
+                            {item.testKey}
+                          </span>
+                        )
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Failed items */}
+                  {failedItems.length > 0 && (
+                    <div className="mt-3 w-full">
+                      <p className="text-xs text-red-500 font-medium mb-2">Failed to import:</p>
+                      <div className="space-y-1 text-left max-h-[60px] overflow-y-auto">
+                        {failedItems.map((item, i) => (
+                          <div key={i} className="text-xs text-red-400 flex items-start gap-2">
+                            <span className="flex-shrink-0">•</span>
+                            <span>{item.summary}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Full success */
+                <>
+                  <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-lg font-semibold text-success">Import Complete!</span>
+                  <span className="text-sm text-text-muted mt-1">
+                    {completedCount} test case{completedCount > 1 ? 's' : ''} imported successfully
+                  </span>
+
+                  {/* Success links */}
+                  {successItems.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-4 justify-center max-h-[80px] overflow-y-auto">
+                      {successItems.map((item, i) => (
+                        item.testKey && jiraBaseUrl ? (
+                          <a
+                            key={i}
+                            href={`${jiraBaseUrl}browse/${item.testKey}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
+                          >
+                            {item.testKey}
+                          </a>
+                        ) : (
+                          <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
+                            {item.testKey}
+                          </span>
+                        )
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer - Only show when complete */}
+        {progress.phase === 'complete' && (
+          <div className="px-6 py-4 border-t border-border flex justify-center">
+            <button
+              onClick={onClose}
+              className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors font-medium"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -193,6 +193,17 @@ export const xrayApi = {
     steps: Array<{ id: string; action: string; data: string; result: string }>;
   }>(`/xray/tests/${issueId}`),
 
+  // Get test with all linked entities (for validation)
+  getTestLinks: (issueId: string) => request<{
+    issueId: string;
+    key: string;
+    testPlans: Array<{ issueId: string; key: string }>;
+    testExecutions: Array<{ issueId: string; key: string }>;
+    testSets: Array<{ issueId: string; key: string }>;
+    preconditions: Array<{ issueId: string; key: string }>;
+    folder?: string;
+  }>(`/xray/tests/${issueId}/links`),
+
   // Get precondition details
   getPreconditionDetails: (issueId: string) => request<{
     issueId: string;

@@ -26,22 +26,33 @@ interface ImportStep {
   error?: string;
 }
 
+interface ValidationResult {
+  isValidated: boolean;
+  testPlans: { expected: string[]; found: string[]; missing: string[] };
+  testExecutions: { expected: string[]; found: string[]; missing: string[] };
+  testSets: { expected: string[]; found: string[]; missing: string[] };
+  preconditions: { expected: string[]; found: string[]; missing: string[] };
+  folder: { expected: string | null; found: string | null; valid: boolean };
+}
+
 interface ImportProgress {
   isOpen: boolean;
-  phase: 'importing' | 'complete';
+  phase: 'importing' | 'validating' | 'complete';
   steps: ImportStep[];
   currentStepIndex: number;
   testKey: string | null;
-  linkedItems: { label: string; type: 'plan' | 'execution' | 'set' | 'folder' | 'precondition' }[];
+  testIssueId: string | null;
+  linkedItems: { label: string; key?: string; type: 'plan' | 'execution' | 'set' | 'folder' | 'precondition' }[];
   failedItems: { label: string; error: string }[];
   isComplete: boolean;
   hasErrors: boolean;
+  validation: ValidationResult | null;
 }
 
 export function EditTestCase() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { activeProject, refreshDrafts } = useApp();
+  const { activeProject, refreshDrafts, config } = useApp();
   const sensors = useStepSensors();
 
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -70,10 +81,12 @@ export function EditTestCase() {
     steps: [],
     currentStepIndex: -1,
     testKey: null,
+    testIssueId: null,
     linkedItems: [],
     failedItems: [],
     isComplete: false,
     hasErrors: false,
+    validation: null,
   });
 
   // Load draft directly from API by ID
@@ -443,7 +456,7 @@ export function EditTestCase() {
       const testKey = importResult.testKeys[0];
 
       updateStep('create', 'completed');
-      setImportProgress(prev => ({ ...prev, testKey }));
+      setImportProgress(prev => ({ ...prev, testKey, testIssueId }));
       advanceStep();
 
       // Link to test plans
@@ -453,10 +466,12 @@ export function EditTestCase() {
         const display = draft.xrayLinking.testPlanDisplays[i]?.display || testPlanId;
 
         updateStep(stepId, 'in-progress');
+        // Extract Jira key from display (format: "KEY: Summary")
+        const key = display.split(':')[0]?.trim();
         try {
           await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
           updateStep(stepId, 'completed');
-          linkedItems.push({ label: display, type: 'plan' });
+          linkedItems.push({ label: display, key, type: 'plan' });
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep(stepId, 'failed', errorMsg);
@@ -474,10 +489,12 @@ export function EditTestCase() {
         const display = draft.xrayLinking.testExecutionDisplays[i]?.display || testExecutionId;
 
         updateStep(stepId, 'in-progress');
+        // Extract Jira key from display (format: "KEY: Summary")
+        const key = display.split(':')[0]?.trim();
         try {
           await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
           updateStep(stepId, 'completed');
-          linkedItems.push({ label: display, type: 'execution' });
+          linkedItems.push({ label: display, key, type: 'execution' });
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep(stepId, 'failed', errorMsg);
@@ -495,10 +512,12 @@ export function EditTestCase() {
         const display = draft.xrayLinking.testSetDisplays[i]?.display || testSetId;
 
         updateStep(stepId, 'in-progress');
+        // Extract Jira key from display (format: "KEY: Summary")
+        const key = display.split(':')[0]?.trim();
         try {
           await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
           updateStep(stepId, 'completed');
-          linkedItems.push({ label: display, type: 'set' });
+          linkedItems.push({ label: display, key, type: 'set' });
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           updateStep(stepId, 'failed', errorMsg);
@@ -547,6 +566,77 @@ export function EditTestCase() {
         advanceStep();
       }
 
+      // Update progress to validation phase
+      setImportProgress(prev => ({
+        ...prev,
+        phase: 'validating',
+        linkedItems,
+        failedItems,
+        hasErrors,
+      }));
+
+      // Validate links by fetching test from Xray
+      let validation: ValidationResult | null = null;
+      try {
+        const testLinks = await xrayApi.getTestLinks(testIssueId);
+
+        // Build expected arrays from what we tried to link
+        const expectedPlanIds = draft.xrayLinking.testPlanIds;
+        const expectedExecIds = draft.xrayLinking.testExecutionIds;
+        const expectedSetIds = draft.xrayLinking.testSetIds;
+        const expectedPreconditionIds = draft.xrayLinking.preconditionIds;
+        const expectedFolder = draft.xrayLinking.folderPath !== '/' ? draft.xrayLinking.folderPath : null;
+
+        // Get found IDs from Xray response
+        const foundPlanIds = testLinks.testPlans.map(p => p.issueId);
+        const foundExecIds = testLinks.testExecutions.map(e => e.issueId);
+        const foundSetIds = testLinks.testSets.map(s => s.issueId);
+        const foundPreconditionIds = testLinks.preconditions.map(p => p.issueId);
+        const foundFolder = testLinks.folder || null;
+
+        // Calculate missing (expected but not found)
+        const missingPlanIds = expectedPlanIds.filter(id => !foundPlanIds.includes(id));
+        const missingExecIds = expectedExecIds.filter(id => !foundExecIds.includes(id));
+        const missingSetIds = expectedSetIds.filter(id => !foundSetIds.includes(id));
+        const missingPreconditionIds = expectedPreconditionIds.filter(id => !foundPreconditionIds.includes(id));
+
+        validation = {
+          isValidated: true,
+          testPlans: { expected: expectedPlanIds, found: foundPlanIds, missing: missingPlanIds },
+          testExecutions: { expected: expectedExecIds, found: foundExecIds, missing: missingExecIds },
+          testSets: { expected: expectedSetIds, found: foundSetIds, missing: missingSetIds },
+          preconditions: { expected: expectedPreconditionIds, found: foundPreconditionIds, missing: missingPreconditionIds },
+          folder: {
+            expected: expectedFolder,
+            found: foundFolder,
+            valid: !expectedFolder || (foundFolder?.includes(expectedFolder) ?? false),
+          },
+        };
+
+        // Check if validation found any missing links
+        const hasMissingLinks =
+          missingPlanIds.length > 0 ||
+          missingExecIds.length > 0 ||
+          missingSetIds.length > 0 ||
+          missingPreconditionIds.length > 0 ||
+          (expectedFolder && !validation.folder.valid);
+
+        if (hasMissingLinks) {
+          hasErrors = true;
+        }
+      } catch (validationErr) {
+        console.error('Validation failed:', validationErr);
+        // Validation failed but import may have succeeded - don't mark as error
+        validation = {
+          isValidated: false,
+          testPlans: { expected: [], found: [], missing: [] },
+          testExecutions: { expected: [], found: [], missing: [] },
+          testSets: { expected: [], found: [], missing: [] },
+          preconditions: { expected: [], found: [], missing: [] },
+          folder: { expected: null, found: null, valid: true },
+        };
+      }
+
       // Update final progress state
       setImportProgress(prev => ({
         ...prev,
@@ -555,6 +645,7 @@ export function EditTestCase() {
         failedItems,
         isComplete: true,
         hasErrors,
+        validation,
       }));
 
       // Update local state with imported info
@@ -776,6 +867,7 @@ export function EditTestCase() {
       <ImportProgressModal
         progress={importProgress}
         onClose={() => setImportProgress(prev => ({ ...prev, isOpen: false }))}
+        jiraBaseUrl={config?.jiraBaseUrl}
       />
     </div>
   );
@@ -785,9 +877,11 @@ export function EditTestCase() {
 function ImportProgressModal({
   progress,
   onClose,
+  jiraBaseUrl,
 }: {
   progress: ImportProgress;
   onClose: () => void;
+  jiraBaseUrl?: string;
 }) {
   if (!progress.isOpen) return null;
 
@@ -802,30 +896,30 @@ function ImportProgressModal({
         {/* Header */}
         <div className="px-6 py-4 border-b border-border text-center">
           <h2 className="text-lg font-semibold text-text-primary">One-Click Import</h2>
-          <p className="text-sm text-accent">Seamless sync to Xray Cloud</p>
+          <p className="text-sm text-accent">Sync to Xray Cloud</p>
         </div>
 
-        {/* Content */}
-        <div className="p-6">
-          {progress.phase === 'importing' ? (
-            /* Importing State */
-            <div className="flex flex-col">
+        {/* Content - Fixed height */}
+        <div className="p-6 h-[280px] flex flex-col">
+          {progress.phase === 'importing' || progress.phase === 'validating' ? (
+            /* Importing/Validating State */
+            <div className="flex flex-col h-full">
               {/* Progress bar */}
               <div className="mb-4">
                 <div className="flex justify-between text-xs text-text-muted mb-2">
-                  <span>Importing...</span>
-                  <span>{percentComplete}%</span>
+                  <span>{progress.phase === 'validating' ? 'Validating links...' : 'Importing...'}</span>
+                  <span>{progress.phase === 'validating' ? '100%' : `${percentComplete}%`}</span>
                 </div>
                 <div className="h-2 bg-sidebar rounded-full overflow-hidden">
                   <div
                     className="h-full bg-accent transition-all duration-300 ease-out rounded-full"
-                    style={{ width: `${percentComplete}%` }}
+                    style={{ width: progress.phase === 'validating' ? '100%' : `${percentComplete}%` }}
                   />
                 </div>
               </div>
 
-              {/* Steps */}
-              <div className="space-y-2 max-h-[200px] overflow-y-auto">
+              {/* Steps - Scrollable */}
+              <div className="flex-1 space-y-2 overflow-y-auto">
                 {progress.steps.map((step, index) => {
                   // Only show steps that are in-progress, completed, or failed
                   if (step.status === 'pending' && index > progress.currentStepIndex) return null;
@@ -837,7 +931,7 @@ function ImportProgressModal({
                       style={{ animationDelay: `${index * 0.05}s` }}
                     >
                       {step.status === 'completed' ? (
-                        <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                        <div className="w-5 h-5 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
                           <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                           </svg>
@@ -854,7 +948,7 @@ function ImportProgressModal({
                         <div className="w-5 h-5 rounded-full border-2 border-text-muted flex-shrink-0" />
                       )}
                       <span className={`text-sm ${
-                        step.status === 'completed' ? 'text-green-600 dark:text-green-400' :
+                        step.status === 'completed' ? 'text-accent' :
                         step.status === 'failed' ? 'text-red-500' :
                         step.status === 'in-progress' ? 'text-text-primary font-medium' :
                         'text-text-muted'
@@ -868,7 +962,7 @@ function ImportProgressModal({
             </div>
           ) : (
             /* Complete State */
-            <div className="flex flex-col items-center text-center animate-scaleIn">
+            <div className="flex flex-col items-center justify-center text-center h-full animate-scaleIn">
               {progress.hasErrors && !progress.testKey ? (
                 /* Full failure - Test creation failed */
                 <>
@@ -897,17 +991,24 @@ function ImportProgressModal({
 
                   {/* Success badges */}
                   {progress.linkedItems.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 justify-center">
-                      {progress.linkedItems.slice(0, 3).map((item, i) => (
-                        <span key={i} className="px-2 py-1 bg-green-500/10 text-green-600 dark:text-green-400 text-xs rounded">
-                          {item.label}
-                        </span>
+                    <div className="flex flex-wrap gap-2 mt-3 justify-center max-h-[60px] overflow-y-auto">
+                      {progress.linkedItems.map((item, i) => (
+                        item.key && jiraBaseUrl ? (
+                          <a
+                            key={i}
+                            href={`${jiraBaseUrl}browse/${item.key}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
+                          >
+                            {item.key}
+                          </a>
+                        ) : (
+                          <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
+                            {item.label}
+                          </span>
+                        )
                       ))}
-                      {progress.linkedItems.length > 3 && (
-                        <span className="px-2 py-1 bg-sidebar text-text-muted text-xs rounded">
-                          +{progress.linkedItems.length - 3} more
-                        </span>
-                      )}
                     </div>
                   )}
 
@@ -929,12 +1030,12 @@ function ImportProgressModal({
               ) : (
                 /* Full success */
                 <>
-                  <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <span className="text-lg font-semibold text-green-500">Import Complete!</span>
+                  <span className="text-lg font-semibold text-success">Import Complete!</span>
                   {progress.testKey && (
                     <span className="text-sm text-text-muted mt-1">
                       <span className="font-mono text-accent">{progress.testKey}</span> created in Jira
@@ -943,18 +1044,43 @@ function ImportProgressModal({
 
                   {/* Linked items badges */}
                   {progress.linkedItems.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                      {progress.linkedItems.slice(0, 4).map((item, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-1 bg-green-500/10 text-green-600 dark:text-green-400 text-xs rounded"
-                        >
-                          {item.label}
-                        </span>
+                    <div className="flex flex-wrap gap-2 mt-4 justify-center max-h-[80px] overflow-y-auto">
+                      {progress.linkedItems.map((item, i) => (
+                        item.key && jiraBaseUrl ? (
+                          <a
+                            key={i}
+                            href={`${jiraBaseUrl}browse/${item.key}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
+                          >
+                            {item.key}
+                          </a>
+                        ) : (
+                          <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
+                            {item.label}
+                          </span>
+                        )
                       ))}
-                      {progress.linkedItems.length > 4 && (
-                        <span className="px-2 py-1 bg-sidebar text-text-muted text-xs rounded">
-                          +{progress.linkedItems.length - 4} more
+                    </div>
+                  )}
+
+                  {/* Validation status */}
+                  {progress.validation && (
+                    <div className="mt-3 text-xs">
+                      {progress.validation.isValidated ? (
+                        <span className="flex items-center justify-center gap-1 text-success">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                          </svg>
+                          Links verified in Xray
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-1 text-text-muted">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Verification pending
                         </span>
                       )}
                     </div>
