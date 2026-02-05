@@ -1,0 +1,424 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { screen, waitFor, renderWithRouter, fireEvent } from '../helpers/render';
+import userEvent from '@testing-library/user-event';
+import { TestCasesList } from '../../client/src/components/features/test-cases/TestCasesList';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+
+describe('TestCasesList', () => {
+  beforeEach(() => {
+    // Setup default MSW handlers
+    server.use(
+      http.get('*/api/config', () => {
+        return HttpResponse.json({
+          configured: true,
+          jiraBaseUrl: 'https://test.atlassian.net/',
+          hasCredentials: true,
+        });
+      }),
+      http.get('*/api/settings', () => {
+        return HttpResponse.json({
+          projects: ['TEST'],
+          hiddenProjects: [],
+          activeProject: 'TEST',
+          projectSettings: { TEST: { color: '#3B82F6' } },
+        });
+      }),
+      http.get('*/api/drafts', () => {
+        return HttpResponse.json([
+          {
+            id: '1',
+            summary: 'Ready Test Case 1',
+            description: 'Description 1',
+            status: 'ready',
+            projectKey: 'TEST',
+            steps: [{ id: 's1', action: 'Step action', result: 'Step result', data: '' }],
+            labels: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            xrayLinking: {
+              testPlanIds: [],
+              testPlanDisplays: [],
+              testExecutionIds: [],
+              testExecutionDisplays: [],
+              testSetIds: [],
+              testSetDisplays: [],
+              preconditionIds: [],
+              preconditionDisplays: [],
+              folderPath: '/',
+            },
+          },
+          {
+            id: '2',
+            summary: 'Ready Test Case 2',
+            description: 'Description 2',
+            status: 'ready',
+            projectKey: 'TEST',
+            steps: [{ id: 's2', action: 'Step action', result: 'Step result', data: '' }],
+            labels: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            xrayLinking: {
+              testPlanIds: [],
+              testPlanDisplays: [],
+              testExecutionIds: [],
+              testExecutionDisplays: [],
+              testSetIds: [],
+              testSetDisplays: [],
+              preconditionIds: [],
+              preconditionDisplays: [],
+              folderPath: '/',
+            },
+          },
+          {
+            id: '3',
+            summary: 'Draft Test Case',
+            description: 'Draft Description',
+            status: 'draft',
+            projectKey: 'TEST',
+            steps: [{ id: 's3', action: 'Step action', result: 'Step result', data: '' }],
+            labels: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            xrayLinking: {
+              testPlanIds: [],
+              testPlanDisplays: [],
+              testExecutionIds: [],
+              testExecutionDisplays: [],
+              testSetIds: [],
+              testSetDisplays: [],
+              preconditionIds: [],
+              preconditionDisplays: [],
+              folderPath: '/',
+            },
+          },
+        ]);
+      }),
+      // Xray endpoints for dashboard
+      http.get('*/api/xray/test-executions/*', () => HttpResponse.json([])),
+      http.get('*/api/xray/tests/by-status/*', () => HttpResponse.json([]))
+    );
+  });
+
+  describe('Bulk Import Progress Modal', () => {
+    it('shows progress modal when bulk importing', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.post('*/api/xray/import', async () => {
+          // Simulate a slight delay for progress visibility
+          await new Promise(resolve => setTimeout(resolve, 100));
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['test-123'],
+            testKeys: ['TEST-100'],
+          });
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      // Wait for list to load
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select a ready test case
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]); // First test case checkbox
+
+      // Click import button
+      await waitFor(() => {
+        expect(screen.getByText(/Import 1 to Xray/)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(/Import 1 to Xray/));
+
+      // Should show progress modal
+      await waitFor(() => {
+        expect(screen.getByText('Bulk Import to Xray')).toBeInTheDocument();
+      });
+    });
+
+    it('shows success state with clickable Jira links after import', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['test-123'],
+            testKeys: ['TEST-100'],
+          });
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      // Wait for list to load
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select a ready test case
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      // Click import button
+      await user.click(screen.getByText(/Import 1 to Xray/));
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should show test key as clickable link
+      await waitFor(() => {
+        const links = screen.getAllByRole('link');
+        const jiraLink = links.find(link =>
+          link.getAttribute('href')?.includes('test.atlassian.net/browse/TEST-100')
+        );
+        expect(jiraLink).toBeInTheDocument();
+        expect(jiraLink).toHaveAttribute('target', '_blank');
+        expect(jiraLink).toHaveAttribute('rel', 'noopener noreferrer');
+      });
+    });
+
+    it('shows partial success when some imports fail', async () => {
+      const user = userEvent.setup();
+      let importCount = 0;
+
+      server.use(
+        http.post('*/api/xray/import', () => {
+          importCount++;
+          if (importCount === 1) {
+            return HttpResponse.json({
+              success: true,
+              testIssueIds: ['test-123'],
+              testKeys: ['TEST-100'],
+            });
+          }
+          // Second import fails
+          return HttpResponse.json(
+            { error: 'Import failed' },
+            { status: 500 }
+          );
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      // Wait for list to load
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select both ready test cases
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]); // First ready case
+      await user.click(checkboxes[2]); // Second ready case
+
+      // Click import button
+      await waitFor(() => {
+        expect(screen.getByText(/Import 2 to Xray/)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(/Import 2 to Xray/));
+
+      // Wait for partial success
+      await waitFor(() => {
+        expect(screen.getByText('Import Completed with Errors')).toBeInTheDocument();
+      }, { timeout: 10000 });
+
+      // Should show successful import count
+      expect(screen.getByText(/1 of 2 imported successfully/)).toBeInTheDocument();
+    });
+
+    it('closes modal when Done button is clicked', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['test-123'],
+            testKeys: ['TEST-100'],
+          });
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      // Wait for list to load
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select a ready test case
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      // Click import button
+      await user.click(screen.getByText(/Import 1 to Xray/));
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Click Done button
+      await user.click(screen.getByText('Done'));
+
+      // Modal should close
+      await waitFor(() => {
+        expect(screen.queryByText('Bulk Import to Xray')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows all imported test keys as clickable links without truncation', async () => {
+      const user = userEvent.setup();
+      let importCount = 0;
+
+      server.use(
+        http.post('*/api/xray/import', () => {
+          importCount++;
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: [`test-${importCount}`],
+            testKeys: [`TEST-${100 + importCount}`],
+          });
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      // Wait for list to load
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select both ready test cases
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+      await user.click(checkboxes[2]);
+
+      // Click import button
+      await user.click(screen.getByText(/Import 2 to Xray/));
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 10000 });
+
+      // Should show all test keys without "+X more" truncation
+      expect(screen.queryByText(/\+\d+ more/)).not.toBeInTheDocument();
+
+      // Both test keys should be visible as links
+      await waitFor(() => {
+        const links = screen.getAllByRole('link');
+        const jiraLinks = links.filter(link =>
+          link.getAttribute('href')?.includes('test.atlassian.net/browse/')
+        );
+        expect(jiraLinks.length).toBe(2);
+      });
+    });
+
+    it('imports test cases one by one with progress', async () => {
+      const user = userEvent.setup();
+      const importedKeys: string[] = [];
+
+      server.use(
+        http.post('*/api/xray/import', async () => {
+          const key = `TEST-${100 + importedKeys.length + 1}`;
+          importedKeys.push(key);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: [`test-${importedKeys.length}`],
+            testKeys: [key],
+          });
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      // Wait for list to load
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select both ready test cases
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+      await user.click(checkboxes[2]);
+
+      // Click import button
+      await user.click(screen.getByText(/Import 2 to Xray/));
+
+      // Should show progress modal with both items
+      await waitFor(() => {
+        expect(screen.getByText('Bulk Import to Xray')).toBeInTheDocument();
+        expect(screen.getByText(/Importing 2 test cases/)).toBeInTheDocument();
+      });
+
+      // Wait for completion
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 10000 });
+
+      // Both imports should have been called
+      expect(importedKeys.length).toBe(2);
+    });
+  });
+
+  describe('Test Cases List Display', () => {
+    it('renders test cases list', async () => {
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Cases')).toBeInTheDocument();
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+        expect(screen.getByText('Ready Test Case 2')).toBeInTheDocument();
+        expect(screen.getByText('Draft Test Case')).toBeInTheDocument();
+      });
+    });
+
+    it('shows bulk action bar when items are selected', async () => {
+      const user = userEvent.setup();
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select a test case
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      // Should show selection count
+      await waitFor(() => {
+        expect(screen.getByText('1 selected')).toBeInTheDocument();
+      });
+    });
+
+    it('filters by status', async () => {
+      const user = userEvent.setup();
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Filter by draft status
+      const statusSelect = screen.getByRole('combobox');
+      await user.selectOptions(statusSelect, 'draft');
+
+      // Should only show draft test case
+      await waitFor(() => {
+        expect(screen.getByText('Draft Test Case')).toBeInTheDocument();
+        expect(screen.queryByText('Ready Test Case 1')).not.toBeInTheDocument();
+      });
+    });
+  });
+});

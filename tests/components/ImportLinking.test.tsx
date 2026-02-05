@@ -75,6 +75,17 @@ async function navigateToStep3() {
   });
 }
 
+// Helper to click Import (starts immediately, no confirmation needed)
+async function clickImport() {
+  // Click "Import to Xray" button - import starts immediately
+  fireEvent.click(screen.getByText('Import to Xray'));
+
+  // Wait for progress modal to appear
+  await waitFor(() => {
+    expect(screen.getByText('One-Click Import')).toBeInTheDocument();
+  });
+}
+
 describe('Import and Linking', () => {
   beforeEach(() => {
     // Setup default MSW handlers
@@ -196,13 +207,12 @@ describe('Import and Linking', () => {
       // Navigate to step 3 (Xray Linking)
       await navigateToStep3();
 
-      // Click Import button
-      const importButton = screen.getByText('Import to Xray');
-      fireEvent.click(importButton);
+      // Click Import and confirm in modal
+      await clickImport();
 
       // Wait for success
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Verify all linking endpoints were called
@@ -212,6 +222,98 @@ describe('Import and Linking', () => {
       expect(linkingCalls).toContain('test-set-10004');
       expect(linkingCalls).toContain('folder');
       expect(linkingCalls).toContain('preconditions');
+    });
+
+    it('sends correct test issue ID to all linking endpoints', async () => {
+      const linkingPayloads: { endpoint: string; testIssueIds: string[] }[] = [];
+      const importedTestIssueId = 'imported-test-issue-456';
+
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: [importedTestIssueId],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', async ({ request, params }) => {
+          const body = await request.json() as { testIssueIds: string[] };
+          linkingPayloads.push({
+            endpoint: `test-plan-${params.id}`,
+            testIssueIds: body.testIssueIds,
+          });
+          return HttpResponse.json({ addedTests: 1 });
+        }),
+        http.post('*/api/xray/test-executions/:id/add-tests', async ({ request, params }) => {
+          const body = await request.json() as { testIssueIds: string[] };
+          linkingPayloads.push({
+            endpoint: `test-execution-${params.id}`,
+            testIssueIds: body.testIssueIds,
+          });
+          return HttpResponse.json({ addedTests: 1 });
+        }),
+        http.post('*/api/xray/test-sets/:id/add-tests', async ({ request, params }) => {
+          const body = await request.json() as { testIssueIds: string[] };
+          linkingPayloads.push({
+            endpoint: `test-set-${params.id}`,
+            testIssueIds: body.testIssueIds,
+          });
+          return HttpResponse.json({ addedTests: 1 });
+        }),
+        http.post('*/api/xray/folders/add-tests', async ({ request }) => {
+          const body = await request.json() as { testIssueIds: string[] };
+          linkingPayloads.push({
+            endpoint: 'folder',
+            testIssueIds: body.testIssueIds,
+          });
+          return HttpResponse.json({ addedTests: 1 });
+        }),
+        http.post('*/api/xray/tests/:id/add-preconditions', async ({ request, params }) => {
+          const body = await request.json() as { preconditionIssueIds: string[] };
+          linkingPayloads.push({
+            endpoint: `preconditions-${params.id}`,
+            testIssueIds: [params.id as string], // Test ID is in the URL for preconditions
+          });
+          return HttpResponse.json({ addedPreconditions: 1 });
+        }),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      await waitFor(() => {
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+
+      // Verify that all linking calls used the correct test issue ID from import
+      const testPlanPayloads = linkingPayloads.filter(p => p.endpoint.startsWith('test-plan-'));
+      const testExecutionPayloads = linkingPayloads.filter(p => p.endpoint.startsWith('test-execution-'));
+      const testSetPayloads = linkingPayloads.filter(p => p.endpoint.startsWith('test-set-'));
+      const folderPayloads = linkingPayloads.filter(p => p.endpoint === 'folder');
+
+      // All test plan linking calls should include the imported test issue ID
+      expect(testPlanPayloads.length).toBe(2); // Mock has 2 test plans
+      testPlanPayloads.forEach(payload => {
+        expect(payload.testIssueIds).toContain(importedTestIssueId);
+      });
+
+      // Test execution linking should include the imported test issue ID
+      expect(testExecutionPayloads.length).toBe(1);
+      expect(testExecutionPayloads[0].testIssueIds).toContain(importedTestIssueId);
+
+      // Test set linking should include the imported test issue ID
+      expect(testSetPayloads.length).toBe(1);
+      expect(testSetPayloads[0].testIssueIds).toContain(importedTestIssueId);
+
+      // Folder linking should include the imported test issue ID
+      expect(folderPayloads.length).toBe(1);
+      expect(folderPayloads[0].testIssueIds).toContain(importedTestIssueId);
     });
   });
 
@@ -268,12 +370,12 @@ describe('Import and Linking', () => {
       // Navigate to step 3
       await navigateToStep3();
 
-      // Click Import
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImport();
 
       // Should still show success (TC was created)
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Other links should have been attempted
@@ -329,12 +431,12 @@ describe('Import and Linking', () => {
       // Navigate to step 3
       await navigateToStep3();
 
-      // Click Import
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImport();
 
       // Wait for import to complete
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Verify ALL linking operations were attempted despite failures
@@ -385,11 +487,12 @@ describe('Import and Linking', () => {
       // Navigate to step 3 and import
       await navigateToStep3();
 
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImport();
 
       // Should still succeed
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
   });
@@ -414,12 +517,12 @@ describe('Import and Linking', () => {
       // Navigate to step 3
       await navigateToStep3();
 
-      // Click Import
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImport();
 
-      // Should show error
+      // Should show error in the modal's complete state (Import Failed)
       await waitFor(() => {
-        expect(screen.getByText(/Xray API unavailable|Import failed/i)).toBeInTheDocument();
+        expect(screen.getByText('Import Failed')).toBeInTheDocument();
       }, { timeout: 5000 });
     });
   });
@@ -483,10 +586,11 @@ describe('Import and Linking', () => {
       // Navigate to step 3 and import
       await navigateToStep3();
 
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImport();
 
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
 
       // Preconditions should NOT have been called
@@ -709,11 +813,12 @@ describe('Import and Linking', () => {
       // Navigate and import
       await navigateToStep3();
 
-      fireEvent.click(screen.getByText('Import to Xray'));
+      // Click Import and confirm in modal
+      await clickImport();
 
       // Success - test key shown
       await waitFor(() => {
-        expect(screen.getByText(/WCP-9999/)).toBeInTheDocument();
+        expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
   });
@@ -846,6 +951,535 @@ describe('Import and Linking', () => {
       // Update Draft button should be enabled because step has content (action: 'Do something')
       const updateDraftButton = screen.getByText('Update Draft');
       expect(updateDraftButton).not.toBeDisabled();
+    });
+  });
+
+  describe('Import Progress Modal', () => {
+    it('shows modal with title and subtitle when import starts', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      // Click Import - modal should open immediately
+      fireEvent.click(screen.getByText('Import to Xray'));
+
+      // Modal should be visible with title and subtitle
+      await waitFor(() => {
+        expect(screen.getByText('One-Click Import')).toBeInTheDocument();
+        expect(screen.getByText('Seamless sync to Xray Cloud')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Import Complete with test key on success', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Should show success state
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should show test key
+      expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
+
+      // Should show "created in Jira" message
+      expect(screen.getByText(/created in Jira/)).toBeInTheDocument();
+
+      // Should show Done button
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    });
+
+    it('shows Imported with Warnings on partial failure', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        // First test plan succeeds
+        http.post('*/api/xray/test-plans/10001/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        // Second test plan fails
+        http.post('*/api/xray/test-plans/10002/add-tests', () => {
+          return HttpResponse.json({ error: 'Permission denied' }, { status: 500 });
+        }),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Should show partial success state
+      await waitFor(() => {
+        expect(screen.getByText('Imported with Warnings')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should still show test key
+      expect(screen.getAllByText(/WCP-9999/).length).toBeGreaterThan(0);
+
+      // Should show "Failed to link" section
+      expect(screen.getByText('Failed to link:')).toBeInTheDocument();
+    });
+
+    it('closes modal and shows imported view when Done is clicked', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Click Done button
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+      // Modal should close and imported view should show
+      await waitFor(() => {
+        expect(screen.queryByText('One-Click Import')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows linked items badges on success', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should show linked items as badges (test plan displays from mock)
+      await waitFor(() => {
+        // Check for at least one linked item badge
+        const badges = screen.getAllByText(/WCP-7067|WCP-7069|WCP-7154/);
+        expect(badges.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('renders linked items as clickable links to Jira', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Verify linked items are rendered as clickable links
+      await waitFor(() => {
+        // Find links by their Jira key text
+        const links = screen.getAllByRole('link');
+        const jiraLinks = links.filter(link =>
+          link.getAttribute('href')?.includes('test.atlassian.net/browse/')
+        );
+
+        // Should have at least one Jira link
+        expect(jiraLinks.length).toBeGreaterThan(0);
+
+        // Verify link attributes
+        const firstLink = jiraLinks[0];
+        expect(firstLink).toHaveAttribute('target', '_blank');
+        expect(firstLink).toHaveAttribute('rel', 'noopener noreferrer');
+        expect(firstLink.getAttribute('href')).toMatch(/https:\/\/test\.atlassian\.net\/browse\/WCP-\d+/);
+      });
+    });
+
+    it('shows all linked items without truncation', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for success
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Verify no "+X more" truncation badge exists
+      await waitFor(() => {
+        expect(screen.queryByText(/\+\d+ more/)).not.toBeInTheDocument();
+      });
+
+      // All linked items should be visible (test plans, executions, sets from mock)
+      // The mock has: 2 test plans, 1 execution, 1 test set = 4 items with keys
+      await waitFor(() => {
+        const links = screen.getAllByRole('link');
+        const jiraLinks = links.filter(link =>
+          link.getAttribute('href')?.includes('test.atlassian.net/browse/')
+        );
+        // Should show all linked items (at least 3: plans + execution + set)
+        expect(jiraLinks.length).toBeGreaterThanOrEqual(3);
+      });
+    });
+
+    it('shows only successfully linked items as badges, failed ones in error list', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        // First test plan succeeds
+        http.post('*/api/xray/test-plans/10001/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        // Second test plan fails
+        http.post('*/api/xray/test-plans/10002/add-tests', () => {
+          return HttpResponse.json({ error: 'Permission denied' }, { status: 500 });
+        }),
+        // Test execution succeeds
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        // Test set fails
+        http.post('*/api/xray/test-sets/:id/add-tests', () => {
+          return HttpResponse.json({ error: 'Not found' }, { status: 404 });
+        }),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for partial success
+      await waitFor(() => {
+        expect(screen.getByText('Imported with Warnings')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should show successfully linked items as clickable links
+      await waitFor(() => {
+        const links = screen.getAllByRole('link');
+        const jiraLinks = links.filter(link =>
+          link.getAttribute('href')?.includes('test.atlassian.net/browse/')
+        );
+        // WCP-7067 (plan 1) and WCP-7069 (execution) should be successful
+        expect(jiraLinks.length).toBeGreaterThanOrEqual(2);
+      });
+
+      // Should show failed items in the error list
+      expect(screen.getByText('Failed to link:')).toBeInTheDocument();
+
+      // Failed test plan (WCP-7068: Sprint 2 Plan) should appear in failed list
+      expect(screen.getByText(/Sprint 2 Plan/)).toBeInTheDocument();
+    });
+
+    it('displays correct Jira URLs for each linked entity type', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Verify each linked item has the correct Jira URL format
+      await waitFor(() => {
+        const links = screen.getAllByRole('link');
+
+        // Test plan links (WCP-7067, WCP-7068)
+        const testPlanLink = links.find(l => l.textContent === 'WCP-7067');
+        expect(testPlanLink).toHaveAttribute('href', 'https://test.atlassian.net/browse/WCP-7067');
+
+        // Test execution link (WCP-7069)
+        const execLink = links.find(l => l.textContent === 'WCP-7069');
+        expect(execLink).toHaveAttribute('href', 'https://test.atlassian.net/browse/WCP-7069');
+
+        // Test set link (WCP-7154)
+        const setLink = links.find(l => l.textContent === 'WCP-7154');
+        expect(setLink).toHaveAttribute('href', 'https://test.atlassian.net/browse/WCP-7154');
+      });
+    });
+  });
+
+  describe('Link Validation', () => {
+    it('calls validation endpoint after import to verify links', async () => {
+      const validationCalled = { called: false, issueId: '' };
+
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+        // Validation endpoint
+        http.get('*/api/xray/tests/:issueId/links', ({ params }) => {
+          validationCalled.called = true;
+          validationCalled.issueId = params.issueId as string;
+          return HttpResponse.json({
+            issueId: params.issueId,
+            key: 'WCP-9999',
+            testPlans: [
+              { issueId: '10001', key: 'WCP-7067' },
+              { issueId: '10002', key: 'WCP-7068' },
+            ],
+            testExecutions: [{ issueId: '10003', key: 'WCP-7069' }],
+            testSets: [{ issueId: '10004', key: 'WCP-7154' }],
+            preconditions: [{ issueId: '10005', key: 'WCP-PRE1' }],
+            folder: '/TestFolder',
+          });
+        }),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Wait for modal to complete
+      await waitFor(() => {
+        expect(screen.getByText('Done')).toBeInTheDocument();
+      }, { timeout: 15000 });
+
+      // Validation endpoint should have been called with the imported test issue ID
+      expect(validationCalled.called).toBe(true);
+      expect(validationCalled.issueId).toBe('new-test-123');
+    });
+
+    it('detects missing links when validation response differs from expected', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+        // Validation endpoint returns MISSING one test plan
+        http.get('*/api/xray/tests/:issueId/links', ({ params }) => {
+          return HttpResponse.json({
+            issueId: params.issueId,
+            key: 'WCP-9999',
+            // Missing test plan 10002
+            testPlans: [{ issueId: '10001', key: 'WCP-7067' }],
+            testExecutions: [{ issueId: '10003', key: 'WCP-7069' }],
+            testSets: [{ issueId: '10004', key: 'WCP-7154' }],
+            preconditions: [{ issueId: '10005', key: 'WCP-PRE1' }],
+            folder: '/TestFolder',
+          });
+        }),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Should show warning due to missing link detected by validation
+      await waitFor(() => {
+        expect(screen.getByText('Imported with Warnings')).toBeInTheDocument();
+      }, { timeout: 15000 });
+    });
+
+    it('completes successfully when validation API fails (graceful degradation)', async () => {
+      server.use(
+        http.post('*/api/xray/import', () => {
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-test-123'],
+            testKeys: ['WCP-9999'],
+          });
+        }),
+        http.post('*/api/xray/test-plans/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-executions/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/test-sets/:id/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/folders/add-tests', () => HttpResponse.json({ addedTests: 1 })),
+        http.post('*/api/xray/tests/:id/add-preconditions', () => HttpResponse.json({ addedPreconditions: 1 })),
+        // Validation endpoint fails
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json({ error: 'Failed to fetch' }, { status: 500 });
+        }),
+      );
+
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Case Summary')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+      await clickImport();
+
+      // Should still complete successfully even if validation fails
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 15000 });
     });
   });
 });

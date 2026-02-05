@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
-import { Button, Card, StatusBadge, ConfirmModal } from '../../ui';
-import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
+import { Button, Card, StatusBadge, ConfirmModal, ImportProgressModal } from '../../ui';
+import { draftsApi, settingsApi } from '../../../services/api';
 import type { Draft, TestStep, ProjectSettings } from '../../../types';
 import {
   type Step,
@@ -17,12 +17,16 @@ import {
   useStepSensors,
 } from './TestCaseFormComponents';
 import { ImportedTestCaseView } from './ImportedTestCaseView';
+import { useImportToXray } from '../../../hooks/useImportToXray';
 
 export function EditTestCase() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { activeProject, refreshDrafts } = useApp();
+  const { activeProject, refreshDrafts, config } = useApp();
   const sensors = useStepSensors();
+
+  // Import hook
+  const { importProgress, importing, startImport, executeImport, closeModal } = useImportToXray();
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [_originalDraft, setOriginalDraft] = useState<Draft | null>(null);
@@ -40,7 +44,6 @@ export function EditTestCase() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showXrayValidation, setShowXrayValidation] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [importSuccess, setImportSuccess] = useState<{ testKey: string } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -286,6 +289,7 @@ export function EditTestCase() {
     }
   };
 
+  // Start import immediately with progress modal
   const handleImportToXray = async () => {
     if (!draft || !activeProject) return;
     if (!validateStep1()) { setCurrentStep(1); return; }
@@ -293,132 +297,40 @@ export function EditTestCase() {
     setShowXrayValidation(true);
     if (!isStep3Valid()) { setCurrentStep(3); return; }
 
-    setImporting(true);
     setErrors({});
     setImportSuccess(null);
 
-    try {
-      // First save the draft as ready
-      await draftsApi.update(draft.id, {
-        ...draft,
-        status: 'ready',
-        isComplete: true,
-        projectKey: activeProject,
-      });
+    // Save draft as ready first
+    await draftsApi.update(draft.id, {
+      ...draft,
+      status: 'ready',
+      isComplete: true,
+      projectKey: activeProject,
+    });
 
-      // Import to Xray
-      const importResult = await xrayApi.import([draft.id], activeProject);
+    // Start import with progress tracking
+    startImport(draft.xrayLinking);
+    const result = await executeImport(draft.id, activeProject, draft.xrayLinking);
 
-      if (!importResult.success || !importResult.testIssueIds || !importResult.testKeys) {
-        throw new Error(importResult.error || 'Import failed');
-      }
-
-      const testIssueId = importResult.testIssueIds[0];
-      const testKey = importResult.testKeys[0];
-
-      // Build linking operations with descriptive labels for error reporting
-      interface LinkingOperation {
-        label: string;
-        promise: Promise<{ addedTests?: number; addedPreconditions?: number; warning?: string }>;
-      }
-
-      const linkingOperations: LinkingOperation[] = [
-        // Link to test plans
-        ...draft.xrayLinking.testPlanIds.map((testPlanId, i) => ({
-          label: `Test Plan ${draft.xrayLinking.testPlanDisplays[i]?.display || testPlanId}`,
-          promise: xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]),
-        })),
-        // Link to test executions
-        ...draft.xrayLinking.testExecutionIds.map((testExecutionId, i) => ({
-          label: `Test Execution ${draft.xrayLinking.testExecutionDisplays[i]?.display || testExecutionId}`,
-          promise: xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]),
-        })),
-        // Link to test sets
-        ...draft.xrayLinking.testSetIds.map((testSetId, i) => ({
-          label: `Test Set ${draft.xrayLinking.testSetDisplays[i]?.display || testSetId}`,
-          promise: xrayApi.addTestsToTestSet(testSetId, [testIssueId]),
-        })),
-      ];
-
-      // Add folder linking if configured
-      if (draft.xrayLinking.folderPath && draft.xrayLinking.projectId) {
-        linkingOperations.push({
-          label: `Folder ${draft.xrayLinking.folderPath}`,
-          promise: xrayApi.addTestsToFolder(
-            draft.xrayLinking.projectId,
-            draft.xrayLinking.folderPath,
-            [testIssueId]
-          ),
-        });
-      }
-
-      // Add preconditions linking if any
-      if (draft.xrayLinking.preconditionIds.length > 0) {
-        linkingOperations.push({
-          label: `Preconditions (${draft.xrayLinking.preconditionIds.length})`,
-          promise: xrayApi.addPreconditionsToTest(testIssueId, draft.xrayLinking.preconditionIds),
-        });
-      }
-
-      // Execute all linking operations in parallel using allSettled to capture all results
-      const results = await Promise.allSettled(linkingOperations.map(op => op.promise));
-
-      // Check for failures and warnings
-      const failures: string[] = [];
-      const warnings: string[] = [];
-
-      results.forEach((result, index) => {
-        const op = linkingOperations[index];
-        if (result.status === 'rejected') {
-          const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-          failures.push(`${op.label}: ${errorMsg}`);
-          console.error(`Linking failed for ${op.label}:`, result.reason);
-        } else if (result.status === 'fulfilled') {
-          const value = result.value;
-          if (value.warning) {
-            warnings.push(`${op.label}: ${value.warning}`);
-          }
-          // Check if anything was actually added
-          const addedCount = value.addedTests ?? value.addedPreconditions ?? 0;
-          if (addedCount === 0) {
-            warnings.push(`${op.label}: No items were linked (already linked or not found)`);
-          }
-        }
-      });
-
-      // Log warnings but don't fail the import
-      if (warnings.length > 0) {
-        console.warn('Linking warnings:', warnings);
-      }
-
-      // If there were failures, show them but still mark as imported since the TC was created
-      if (failures.length > 0) {
-        console.error('Some linking operations failed:', failures);
-        setErrors({ linking: `Some links failed: ${failures.join('; ')}` });
-      }
-
+    if (result.success && result.testKey && result.testIssueId) {
       // Update local state with imported info
       setDraft({
         ...draft,
         status: 'imported',
-        testKey,
-        testIssueId,
+        testKey: result.testKey,
+        testIssueId: result.testIssueId,
       });
       setOriginalDraft({
         ...draft,
         status: 'imported',
-        testKey,
-        testIssueId,
+        testKey: result.testKey,
+        testIssueId: result.testIssueId,
       });
       setHasChanges(false);
-      setImportSuccess({ testKey });
-
+      setImportSuccess({ testKey: result.testKey });
       await refreshDrafts();
-    } catch (err) {
-      console.error('Failed to import to Xray:', err);
-      setErrors({ import: err instanceof Error ? err.message : 'Failed to import to Xray' });
-    } finally {
-      setImporting(false);
+    } else if (result.error) {
+      setErrors({ import: result.error });
     }
   };
 
@@ -477,8 +389,8 @@ export function EditTestCase() {
     );
   }
 
-  // Show read-only view for imported test cases
-  if (draft.status === 'imported') {
+  // Show read-only view for imported test cases (but keep modal visible until closed)
+  if (draft.status === 'imported' && !importProgress.isOpen) {
     return <ImportedTestCaseView draft={draft} />;
   }
 
@@ -604,6 +516,13 @@ export function EditTestCase() {
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteModal(false)}
+      />
+
+      {/* Import Progress Modal */}
+      <ImportProgressModal
+        progress={importProgress}
+        onClose={closeModal}
+        jiraBaseUrl={config?.jiraBaseUrl}
       />
     </div>
   );

@@ -22,6 +22,7 @@ import {
   getTestsFromTestExecution,
   getTestsFromPrecondition,
   getTestDetails,
+  getTestWithLinks,
   getPreconditionDetails,
   getTestExecutionStatusSummary,
   getTestsByStatus,
@@ -431,6 +432,32 @@ router.get('/tests/:issueId', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching test details:', error);
     return res.status(500).json({ error: 'Failed to fetch test details' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/tests/{issueId}/links:
+ *   get:
+ *     summary: Get test with all linked entities (for validation)
+ *     parameters:
+ *       - in: path
+ *         name: issueId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Test with all linked entities
+ */
+router.get('/tests/:issueId/links', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const testLinks = await getTestWithLinks(issueId);
+    return res.json(testLinks);
+  } catch (error) {
+    console.error('Error fetching test links:', error);
+    return res.status(500).json({ error: 'Failed to fetch test links' });
   }
 });
 
