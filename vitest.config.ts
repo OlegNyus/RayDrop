@@ -98,6 +98,7 @@ export default defineConfig({
     // Timeouts
     testTimeout: 10000,
     hookTimeout: 10000,
+
   },
 
   // Path aliases (match client tsconfig)
@@ -106,7 +107,8 @@ export default defineConfig({
       '@client': path.resolve(__dirname, './client/src'),
       '@server': path.resolve(__dirname, './server/src'),
       '@tests': path.resolve(__dirname, './tests'),
-      // Ensure single React instance for testing
+      // Ensure single module instance for testing (resolve nested node_modules)
+      'axios': path.resolve(__dirname, './server/node_modules/axios'),
       'react': path.resolve(__dirname, './client/node_modules/react'),
       'react-dom': path.resolve(__dirname, './client/node_modules/react-dom'),
       'react-router-dom': path.resolve(__dirname, './client/node_modules/react-router-dom'),
