@@ -4,9 +4,10 @@ import { detectCode, getLanguageDisplayName, type CodeLanguage } from '../../uti
 interface CodeBlockProps {
   code: string;
   onCopy?: () => void;
+  forceRender?: boolean;
 }
 
-export function CodeBlock({ code, onCopy }: CodeBlockProps) {
+export function CodeBlock({ code, onCopy, forceRender }: CodeBlockProps) {
   const detection = useMemo(() => detectCode(code), [code]);
   const { isCode, language, codeBlock, prefixText, suffixText } = detection;
 
@@ -15,7 +16,7 @@ export function CodeBlock({ code, onCopy }: CodeBlockProps) {
     onCopy?.();
   };
 
-  if (!isCode) {
+  if (!isCode && !forceRender) {
     return null;
   }
 

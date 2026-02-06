@@ -274,7 +274,7 @@ function TestDataDisplay({ data }: { data: string }) {
   const { isCode } = detectCode(cleanData);
 
   if (isCode || wikiCodeMatch) {
-    return <CodeBlock code={cleanData} />;
+    return <CodeBlock code={cleanData} forceRender={!!wikiCodeMatch} />;
   }
 
   return <p className="text-text-secondary whitespace-pre-wrap">{data}</p>;
