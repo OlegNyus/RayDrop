@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { Card, Button, StatusBadge, Input, TestKeyLink, ConfirmModal } from '../../ui';
 import { draftsApi, xrayApi } from '../../../services/api';
+import { executeLinking, countLinks } from '../../../hooks/useImportToXray';
+import type { LinkedItem, FailedItem, ValidationResult } from '../../../hooks/useImportToXray';
 import type { Draft, TestCaseStatus } from '../../../types';
 
 type SortField = 'updatedAt' | 'summary' | 'status';
@@ -17,11 +19,18 @@ interface BulkImportItem {
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
   testKey?: string;
   error?: string;
+  // Linking fields
+  linkingStatus: 'none' | 'pending' | 'linking' | 'done';
+  totalLinks: number;
+  linkedItems: LinkedItem[];
+  failedItems: FailedItem[];
+  hasLinkingErrors: boolean;
+  validation: ValidationResult | null;
 }
 
 interface BulkImportProgress {
   isOpen: boolean;
-  phase: 'importing' | 'complete';
+  phase: 'importing' | 'linking' | 'complete';
   items: BulkImportItem[];
   currentIndex: number;
   isComplete: boolean;
@@ -257,6 +266,12 @@ export function TestCasesList() {
       id: d.id,
       summary: d.summary || 'Untitled',
       status: 'pending' as const,
+      linkingStatus: countLinks(d.xrayLinking) > 0 ? 'pending' as const : 'none' as const,
+      totalLinks: countLinks(d.xrayLinking),
+      linkedItems: [],
+      failedItems: [],
+      hasLinkingErrors: false,
+      validation: null,
     }));
 
     setBulkImportProgress({
@@ -286,16 +301,52 @@ export function TestCasesList() {
 
       try {
         // Import single draft
-        const result = await xrayApi.import([draft.id]);
+        const result = await xrayApi.import([draft.id], draft.projectKey);
         const testKey = result.testKeys?.[0];
+        const testIssueId = result.testIssueIds?.[0];
 
-        // Update item to completed
+        // Update item to completed (import phase)
         setBulkImportProgress(prev => ({
           ...prev,
           items: prev.items.map((item, idx) =>
             idx === i ? { ...item, status: 'completed' as const, testKey } : item
           ),
         }));
+
+        // Execute linking if there are links configured and we have a testIssueId
+        if (testIssueId && countLinks(draft.xrayLinking) > 0) {
+          // Update linking status
+          setBulkImportProgress(prev => ({
+            ...prev,
+            phase: 'linking',
+            items: prev.items.map((item, idx) =>
+              idx === i ? { ...item, linkingStatus: 'linking' as const } : item
+            ),
+          }));
+
+          const linkingResult = await executeLinking(testIssueId, draft.xrayLinking);
+
+          if (linkingResult.hasErrors) {
+            hasErrors = true;
+          }
+
+          // Update item with linking results
+          setBulkImportProgress(prev => ({
+            ...prev,
+            // Restore phase to importing if more items to go
+            phase: i < itemsToImport.length - 1 ? 'importing' : prev.phase,
+            items: prev.items.map((item, idx) =>
+              idx === i ? {
+                ...item,
+                linkingStatus: 'done' as const,
+                linkedItems: linkingResult.linkedItems,
+                failedItems: linkingResult.failedItems,
+                hasLinkingErrors: linkingResult.hasErrors,
+                validation: linkingResult.validation,
+              } : item
+            ),
+          }));
+        }
       } catch (err) {
         hasErrors = true;
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -623,15 +674,25 @@ function BulkImportProgressModal({
   onClose: () => void;
   jiraBaseUrl?: string;
 }) {
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+
   if (!progress.isOpen) return null;
 
   const completedCount = progress.items.filter(i => i.status === 'completed').length;
-  const failedCount = progress.items.filter(i => i.status === 'failed').length;
   const totalCount = progress.items.length;
-  const percentComplete = totalCount > 0 ? Math.round(((completedCount + failedCount) / totalCount) * 100) : 0;
+  // For progress: count items that are fully done (import + linking complete or no links)
+  const fullyDoneCount = progress.items.filter(i =>
+    (i.status === 'completed' && (i.linkingStatus === 'done' || i.linkingStatus === 'none')) ||
+    i.status === 'failed'
+  ).length;
+  const percentComplete = totalCount > 0 ? Math.round((fullyDoneCount / totalCount) * 100) : 0;
 
   const successItems = progress.items.filter(i => i.status === 'completed' && i.testKey);
-  const failedItems = progress.items.filter(i => i.status === 'failed');
+  const importFailedItems = progress.items.filter(i => i.status === 'failed');
+  const itemsWithLinkingErrors = progress.items.filter(i => i.hasLinkingErrors);
+  const totalLinked = progress.items.reduce((sum, i) => sum + i.linkedItems.length, 0);
+  const totalLinkFailed = progress.items.reduce((sum, i) => sum + i.failedItems.length, 0);
+  const hasAnyLinks = progress.items.some(i => i.totalLinks > 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -639,22 +700,29 @@ function BulkImportProgressModal({
       <div className="absolute inset-0 bg-black/50" />
 
       {/* Modal */}
-      <div className="relative bg-card rounded-xl shadow-2xl w-full max-w-md border border-border animate-scaleIn">
+      <div className="relative bg-card rounded-xl shadow-2xl w-full max-w-lg border border-border animate-scaleIn">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border text-center">
           <h2 className="text-lg font-semibold text-text-primary">Bulk Import to Xray</h2>
-          <p className="text-sm text-accent">Importing {totalCount} test case{totalCount > 1 ? 's' : ''}</p>
+          <p className="text-sm text-accent">
+            {progress.phase === 'complete'
+              ? `${totalCount} test case${totalCount > 1 ? 's' : ''} processed`
+              : `Importing ${totalCount} test case${totalCount > 1 ? 's' : ''}`
+            }
+          </p>
         </div>
 
         {/* Content */}
-        <div className="px-6 py-6 h-[320px] flex flex-col">
-          {progress.phase === 'importing' ? (
-            /* Importing phase */
+        <div className="px-6 py-6 h-[380px] flex flex-col">
+          {progress.phase !== 'complete' ? (
+            /* Importing/linking phase */
             <>
               {/* Progress bar */}
               <div className="mb-4">
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-text-muted">Progress</span>
+                  <span className="text-text-muted">
+                    {progress.phase === 'linking' ? 'Linking...' : 'Progress'}
+                  </span>
                   <span className="text-accent font-medium">{percentComplete}%</span>
                 </div>
                 <div className="h-2 bg-sidebar rounded-full overflow-hidden">
@@ -667,11 +735,11 @@ function BulkImportProgressModal({
 
               {/* Items list */}
               <div className="flex-1 overflow-y-auto space-y-2">
-                {progress.items.map((item, index) => (
+                {progress.items.map((item) => (
                   <div
                     key={item.id}
                     className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
-                      item.status === 'in-progress' ? 'bg-accent/10' : ''
+                      item.status === 'in-progress' || item.linkingStatus === 'linking' ? 'bg-accent/10' : ''
                     }`}
                   >
                     {/* Status icon */}
@@ -679,14 +747,14 @@ function BulkImportProgressModal({
                       {item.status === 'pending' && (
                         <div className="w-2 h-2 rounded-full bg-text-muted" />
                       )}
-                      {item.status === 'in-progress' && (
+                      {(item.status === 'in-progress' || item.linkingStatus === 'linking') && (
                         <svg className="w-5 h-5 text-accent animate-spin" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
                       )}
-                      {item.status === 'completed' && (
-                        <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      {item.status === 'completed' && item.linkingStatus !== 'linking' && (
+                        <svg className={`w-5 h-5 ${item.hasLinkingErrors ? 'text-amber-500' : 'text-success'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                       )}
@@ -701,17 +769,32 @@ function BulkImportProgressModal({
                     <div className="flex-1 min-w-0">
                       <span className={`text-sm truncate block ${
                         item.status === 'in-progress' ? 'text-accent font-medium' :
+                        item.linkingStatus === 'linking' ? 'text-accent font-medium' :
+                        item.status === 'completed' && item.hasLinkingErrors ? 'text-amber-500' :
                         item.status === 'completed' ? 'text-success' :
                         item.status === 'failed' ? 'text-error' :
                         'text-text-muted'
                       }`}>
                         {item.summary}
                       </span>
-                      {item.testKey && (
-                        <span className="text-xs text-text-muted">{item.testKey}</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {item.testKey && (
+                          <span className="text-xs text-text-muted">{item.testKey}</span>
+                        )}
+                        {item.linkingStatus === 'linking' && (
+                          <span className="text-xs text-accent">Linking...</span>
+                        )}
+                        {item.linkingStatus === 'done' && !item.hasLinkingErrors && item.linkedItems.length > 0 && (
+                          <span className="text-xs text-success">{item.linkedItems.length} linked</span>
+                        )}
+                        {item.linkingStatus === 'done' && item.hasLinkingErrors && (
+                          <span className="text-xs text-amber-500">
+                            {item.linkedItems.length} linked, {item.failedItems.length} failed
+                          </span>
+                        )}
+                      </div>
                       {item.error && (
-                        <span className="text-xs text-error">{item.error}</span>
+                        <span className="text-xs text-error block">{item.error}</span>
                       )}
                     </div>
                   </div>
@@ -720,95 +803,158 @@ function BulkImportProgressModal({
             </>
           ) : (
             /* Complete phase */
-            <div className="flex-1 flex flex-col items-center justify-center text-center">
-              {progress.hasErrors ? (
-                /* Partial success */
-                <>
-                  <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <span className="text-lg font-semibold text-amber-500">Import Completed with Errors</span>
-                  <span className="text-sm text-text-muted mt-1">
-                    {completedCount} of {totalCount} imported successfully
-                  </span>
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Summary header */}
+              <div className="flex flex-col items-center text-center mb-4 flex-shrink-0">
+                {progress.hasErrors ? (
+                  <>
+                    <div className="w-14 h-14 rounded-full bg-amber-500/20 flex items-center justify-center mb-3">
+                      <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <span className="text-lg font-semibold text-amber-500">Completed with Warnings</span>
+                    <span className="text-sm text-text-muted mt-1">
+                      {completedCount} of {totalCount} imported
+                      {hasAnyLinks && ` | ${totalLinked} linked${totalLinkFailed > 0 ? `, ${totalLinkFailed} link error${totalLinkFailed > 1 ? 's' : ''}` : ''}`}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-14 h-14 rounded-full bg-success/20 flex items-center justify-center mb-3">
+                      <svg className="w-7 h-7 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-lg font-semibold text-success">Import Complete!</span>
+                    <span className="text-sm text-text-muted mt-1">
+                      {completedCount} test case{completedCount > 1 ? 's' : ''} imported
+                      {hasAnyLinks && ` | ${totalLinked} link${totalLinked !== 1 ? 's' : ''} created`}
+                    </span>
+                  </>
+                )}
+              </div>
 
-                  {/* Success links */}
-                  {successItems.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-4 justify-center max-h-[60px] overflow-y-auto">
-                      {successItems.map((item, i) => (
-                        item.testKey && jiraBaseUrl ? (
-                          <a
-                            key={i}
-                            href={`${jiraBaseUrl}browse/${item.testKey}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
-                          >
-                            {item.testKey}
-                          </a>
-                        ) : (
-                          <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
-                            {item.testKey}
-                          </span>
-                        )
+              {/* Scrollable results */}
+              <div className="flex-1 overflow-y-auto space-y-3">
+                {/* Success links */}
+                {successItems.length > 0 && (
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {successItems.map((item, i) => (
+                      item.testKey && jiraBaseUrl ? (
+                        <a
+                          key={i}
+                          href={`${jiraBaseUrl}browse/${item.testKey}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
+                        >
+                          {item.testKey}
+                        </a>
+                      ) : (
+                        <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
+                          {item.testKey}
+                        </span>
+                      )
+                    ))}
+                  </div>
+                )}
+
+                {/* Import failures */}
+                {importFailedItems.length > 0 && (
+                  <div className="w-full">
+                    <p className="text-xs text-red-500 font-medium mb-2">Failed to import:</p>
+                    <div className="space-y-1 text-left">
+                      {importFailedItems.map((item, i) => (
+                        <div key={i} className="text-xs text-red-400 flex items-start gap-2">
+                          <span className="flex-shrink-0">•</span>
+                          <span>{item.summary}{item.error ? `: ${item.error}` : ''}</span>
+                        </div>
                       ))}
                     </div>
-                  )}
-
-                  {/* Failed items */}
-                  {failedItems.length > 0 && (
-                    <div className="mt-3 w-full">
-                      <p className="text-xs text-red-500 font-medium mb-2">Failed to import:</p>
-                      <div className="space-y-1 text-left max-h-[60px] overflow-y-auto">
-                        {failedItems.map((item, i) => (
-                          <div key={i} className="text-xs text-red-400 flex items-start gap-2">
-                            <span className="flex-shrink-0">•</span>
-                            <span>{item.summary}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* Full success */
-                <>
-                  <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
                   </div>
-                  <span className="text-lg font-semibold text-success">Import Complete!</span>
-                  <span className="text-sm text-text-muted mt-1">
-                    {completedCount} test case{completedCount > 1 ? 's' : ''} imported successfully
-                  </span>
+                )}
 
-                  {/* Success links */}
-                  {successItems.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-4 justify-center max-h-[80px] overflow-y-auto">
-                      {successItems.map((item, i) => (
-                        item.testKey && jiraBaseUrl ? (
-                          <a
-                            key={i}
-                            href={`${jiraBaseUrl}browse/${item.testKey}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2 py-1 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20 transition-colors"
+                {/* Linking errors per item */}
+                {itemsWithLinkingErrors.length > 0 && (
+                  <div className="w-full">
+                    <p className="text-xs text-amber-500 font-medium mb-2">Linking issues:</p>
+                    <div className="space-y-2 text-left">
+                      {itemsWithLinkingErrors.map((item) => (
+                        <div key={item.id} className="border border-amber-500/20 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                            className="w-full flex items-center justify-between p-2 text-left hover:bg-amber-500/5 transition-colors"
                           >
-                            {item.testKey}
-                          </a>
-                        ) : (
-                          <span key={i} className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
-                            {item.testKey}
-                          </span>
-                        )
+                            <span className="text-xs text-amber-400 font-medium truncate">
+                              {item.testKey || item.summary}
+                              <span className="text-text-muted font-normal ml-1">
+                                ({item.linkedItems.length} linked, {item.failedItems.length} failed)
+                              </span>
+                            </span>
+                            <svg
+                              className={`w-3.5 h-3.5 text-text-muted flex-shrink-0 transition-transform ${expandedItem === item.id ? 'rotate-180' : ''}`}
+                              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {expandedItem === item.id && (
+                            <div className="px-2 pb-2 space-y-1">
+                              {item.failedItems.map((fi, j) => (
+                                <div key={j} className="text-xs text-red-400 flex items-start gap-2">
+                                  <span className="flex-shrink-0">•</span>
+                                  <span>{fi.label}: {fi.error}</span>
+                                </div>
+                              ))}
+                              {item.validation && !item.validation.isValidated && (
+                                <div className="text-xs text-amber-400 flex items-start gap-2">
+                                  <span className="flex-shrink-0">!</span>
+                                  <span>Validation could not be completed</span>
+                                </div>
+                              )}
+                              {item.validation?.isValidated && (
+                                <>
+                                  {item.validation.testPlans.missing.length > 0 && (
+                                    <div className="text-xs text-amber-400 flex items-start gap-2">
+                                      <span className="flex-shrink-0">!</span>
+                                      <span>Missing test plans: {item.validation.testPlans.missing.length}</span>
+                                    </div>
+                                  )}
+                                  {item.validation.testExecutions.missing.length > 0 && (
+                                    <div className="text-xs text-amber-400 flex items-start gap-2">
+                                      <span className="flex-shrink-0">!</span>
+                                      <span>Missing test executions: {item.validation.testExecutions.missing.length}</span>
+                                    </div>
+                                  )}
+                                  {item.validation.testSets.missing.length > 0 && (
+                                    <div className="text-xs text-amber-400 flex items-start gap-2">
+                                      <span className="flex-shrink-0">!</span>
+                                      <span>Missing test sets: {item.validation.testSets.missing.length}</span>
+                                    </div>
+                                  )}
+                                  {item.validation.preconditions.missing.length > 0 && (
+                                    <div className="text-xs text-amber-400 flex items-start gap-2">
+                                      <span className="flex-shrink-0">!</span>
+                                      <span>Missing preconditions: {item.validation.preconditions.missing.length}</span>
+                                    </div>
+                                  )}
+                                  {!item.validation.folder.valid && (
+                                    <div className="text-xs text-amber-400 flex items-start gap-2">
+                                      <span className="flex-shrink-0">!</span>
+                                      <span>Folder not verified: expected {item.validation.folder.expected}</span>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
-                  )}
-                </>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

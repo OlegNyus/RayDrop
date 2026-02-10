@@ -44,6 +44,13 @@ export interface ImportProgress {
   validation: ValidationResult | null;
 }
 
+export interface LinkingResult {
+  linkedItems: LinkedItem[];
+  failedItems: FailedItem[];
+  hasErrors: boolean;
+  validation: ValidationResult | null;
+}
+
 export interface ImportResult {
   success: boolean;
   testKey?: string;
@@ -64,6 +71,159 @@ const initialProgress: ImportProgress = {
   hasErrors: false,
   validation: null,
 };
+
+// Helper to count total links configured in xrayLinking
+export function countLinks(xrayLinking: Draft['xrayLinking']): number {
+  let count = 0;
+  count += xrayLinking.testPlanIds.length;
+  count += xrayLinking.testExecutionIds.length;
+  count += xrayLinking.testSetIds.length;
+  if (xrayLinking.folderPath && xrayLinking.projectId) count += 1;
+  if (xrayLinking.preconditionIds.length > 0) count += 1;
+  return count;
+}
+
+// Standalone helper for link creation + validation (no React state)
+export async function executeLinking(
+  testIssueId: string,
+  xrayLinking: Draft['xrayLinking'],
+): Promise<LinkingResult> {
+  const linkedItems: LinkedItem[] = [];
+  const failedItems: FailedItem[] = [];
+  let hasErrors = false;
+
+  // Link to test plans
+  for (let i = 0; i < xrayLinking.testPlanIds.length; i++) {
+    const testPlanId = xrayLinking.testPlanIds[i];
+    const display = xrayLinking.testPlanDisplays[i]?.display || testPlanId;
+    const key = display.split(':')[0]?.trim();
+    try {
+      await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
+      linkedItems.push({ label: display, key, type: 'plan' });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      failedItems.push({ label: `Test Plan: ${display}`, error: errorMsg });
+      hasErrors = true;
+    }
+  }
+
+  // Link to test executions
+  for (let i = 0; i < xrayLinking.testExecutionIds.length; i++) {
+    const testExecutionId = xrayLinking.testExecutionIds[i];
+    const display = xrayLinking.testExecutionDisplays[i]?.display || testExecutionId;
+    const key = display.split(':')[0]?.trim();
+    try {
+      await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
+      linkedItems.push({ label: display, key, type: 'execution' });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      failedItems.push({ label: `Test Execution: ${display}`, error: errorMsg });
+      hasErrors = true;
+    }
+  }
+
+  // Link to test sets
+  for (let i = 0; i < xrayLinking.testSetIds.length; i++) {
+    const testSetId = xrayLinking.testSetIds[i];
+    const display = xrayLinking.testSetDisplays[i]?.display || testSetId;
+    const key = display.split(':')[0]?.trim();
+    try {
+      await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
+      linkedItems.push({ label: display, key, type: 'set' });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      failedItems.push({ label: `Test Set: ${display}`, error: errorMsg });
+      hasErrors = true;
+    }
+  }
+
+  // Link to folder
+  if (xrayLinking.folderPath && xrayLinking.projectId) {
+    try {
+      await xrayApi.addTestsToFolder(
+        xrayLinking.projectId,
+        xrayLinking.folderPath,
+        [testIssueId]
+      );
+      linkedItems.push({ label: xrayLinking.folderPath, type: 'folder' });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      failedItems.push({ label: `Folder: ${xrayLinking.folderPath}`, error: errorMsg });
+      hasErrors = true;
+    }
+  }
+
+  // Link preconditions
+  if (xrayLinking.preconditionIds.length > 0) {
+    try {
+      await xrayApi.addPreconditionsToTest(testIssueId, xrayLinking.preconditionIds);
+      linkedItems.push({ label: `${xrayLinking.preconditionIds.length} precondition(s)`, type: 'precondition' });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      failedItems.push({ label: 'Preconditions', error: errorMsg });
+      hasErrors = true;
+    }
+  }
+
+  // Validation
+  let validation: ValidationResult | null = null;
+  try {
+    const testLinks = await xrayApi.getTestLinks(testIssueId);
+
+    const expectedPlanIds = xrayLinking.testPlanIds;
+    const expectedExecIds = xrayLinking.testExecutionIds;
+    const expectedSetIds = xrayLinking.testSetIds;
+    const expectedPreconditionIds = xrayLinking.preconditionIds;
+    const expectedFolder = xrayLinking.folderPath !== '/' ? xrayLinking.folderPath : null;
+
+    const foundPlanIds = testLinks.testPlans.map(p => p.issueId);
+    const foundExecIds = testLinks.testExecutions.map(e => e.issueId);
+    const foundSetIds = testLinks.testSets.map(s => s.issueId);
+    const foundPreconditionIds = testLinks.preconditions.map(p => p.issueId);
+    const foundFolder = testLinks.folder || null;
+
+    const missingPlanIds = expectedPlanIds.filter(id => !foundPlanIds.includes(id));
+    const missingExecIds = expectedExecIds.filter(id => !foundExecIds.includes(id));
+    const missingSetIds = expectedSetIds.filter(id => !foundSetIds.includes(id));
+    const missingPreconditionIds = expectedPreconditionIds.filter(id => !foundPreconditionIds.includes(id));
+
+    validation = {
+      isValidated: true,
+      testPlans: { expected: expectedPlanIds, found: foundPlanIds, missing: missingPlanIds },
+      testExecutions: { expected: expectedExecIds, found: foundExecIds, missing: missingExecIds },
+      testSets: { expected: expectedSetIds, found: foundSetIds, missing: missingSetIds },
+      preconditions: { expected: expectedPreconditionIds, found: foundPreconditionIds, missing: missingPreconditionIds },
+      folder: {
+        expected: expectedFolder,
+        found: foundFolder,
+        valid: !expectedFolder || (foundFolder?.includes(expectedFolder) ?? false),
+      },
+    };
+
+    const hasMissingLinks =
+      missingPlanIds.length > 0 ||
+      missingExecIds.length > 0 ||
+      missingSetIds.length > 0 ||
+      missingPreconditionIds.length > 0 ||
+      (expectedFolder && !validation.folder.valid);
+
+    if (hasMissingLinks) {
+      hasErrors = true;
+    }
+  } catch (validationErr) {
+    console.error('Validation failed:', validationErr);
+    validation = {
+      isValidated: false,
+      testPlans: { expected: [], found: [], missing: [] },
+      testExecutions: { expected: [], found: [], missing: [] },
+      testSets: { expected: [], found: [], missing: [] },
+      preconditions: { expected: [], found: [], missing: [] },
+      folder: { expected: null, found: null, valid: true },
+    };
+  }
+
+  return { linkedItems, failedItems, hasErrors, validation };
+}
 
 export function useImportToXray() {
   const [importProgress, setImportProgress] = useState<ImportProgress>(initialProgress);
@@ -166,10 +326,6 @@ export function useImportToXray() {
     projectKey: string,
     xrayLinking: Draft['xrayLinking']
   ): Promise<ImportResult> => {
-    const linkedItems: LinkedItem[] = [];
-    const failedItems: FailedItem[] = [];
-    let hasErrors = false;
-
     try {
       // Step: Create test in Jira
       updateStep('create', 'in-progress');
@@ -187,179 +343,90 @@ export function useImportToXray() {
       setImportProgress(prev => ({ ...prev, testKey, testIssueId }));
       advanceStep();
 
-      // Link to test plans
-      for (let i = 0; i < xrayLinking.testPlanIds.length; i++) {
-        const stepId = `plan-${i}`;
-        const testPlanId = xrayLinking.testPlanIds[i];
-        const display = xrayLinking.testPlanDisplays[i]?.display || testPlanId;
+      // Mark linking steps as in-progress/completed/failed in the UI
+      // while delegating actual work to executeLinking helper
+      const stepIds: string[] = [];
+      xrayLinking.testPlanIds.forEach((_, i) => stepIds.push(`plan-${i}`));
+      xrayLinking.testExecutionIds.forEach((_, i) => stepIds.push(`exec-${i}`));
+      xrayLinking.testSetIds.forEach((_, i) => stepIds.push(`set-${i}`));
+      if (xrayLinking.folderPath && xrayLinking.projectId) stepIds.push('folder');
+      if (xrayLinking.preconditionIds.length > 0) stepIds.push('preconditions');
 
-        updateStep(stepId, 'in-progress');
-        const key = display.split(':')[0]?.trim();
-        try {
-          await xrayApi.addTestsToTestPlan(testPlanId, [testIssueId]);
-          updateStep(stepId, 'completed');
-          linkedItems.push({ label: display, key, type: 'plan' });
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          updateStep(stepId, 'failed', errorMsg);
-          failedItems.push({ label: `Test Plan: ${display}`, error: errorMsg });
-          hasErrors = true;
+      // Mark all linking steps as in-progress
+      stepIds.forEach(id => updateStep(id, 'in-progress'));
+
+      // Delegate linking + validation to the standalone helper
+      const linkingResult = await executeLinking(testIssueId, xrayLinking);
+
+      // Map linking results back to step UI status
+      const failedLabels = new Map(linkingResult.failedItems.map(f => [f.label, f.error]));
+
+      // Update plan steps
+      xrayLinking.testPlanIds.forEach((_, i) => {
+        const display = xrayLinking.testPlanDisplays[i]?.display || xrayLinking.testPlanIds[i];
+        const failedLabel = `Test Plan: ${display}`;
+        if (failedLabels.has(failedLabel)) {
+          updateStep(`plan-${i}`, 'failed', failedLabels.get(failedLabel));
+        } else {
+          updateStep(`plan-${i}`, 'completed');
         }
         advanceStep();
-      }
+      });
 
-      // Link to test executions
-      for (let i = 0; i < xrayLinking.testExecutionIds.length; i++) {
-        const stepId = `exec-${i}`;
-        const testExecutionId = xrayLinking.testExecutionIds[i];
-        const display = xrayLinking.testExecutionDisplays[i]?.display || testExecutionId;
-
-        updateStep(stepId, 'in-progress');
-        const key = display.split(':')[0]?.trim();
-        try {
-          await xrayApi.addTestsToTestExecution(testExecutionId, [testIssueId]);
-          updateStep(stepId, 'completed');
-          linkedItems.push({ label: display, key, type: 'execution' });
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          updateStep(stepId, 'failed', errorMsg);
-          failedItems.push({ label: `Test Execution: ${display}`, error: errorMsg });
-          hasErrors = true;
+      // Update execution steps
+      xrayLinking.testExecutionIds.forEach((_, i) => {
+        const display = xrayLinking.testExecutionDisplays[i]?.display || xrayLinking.testExecutionIds[i];
+        const failedLabel = `Test Execution: ${display}`;
+        if (failedLabels.has(failedLabel)) {
+          updateStep(`exec-${i}`, 'failed', failedLabels.get(failedLabel));
+        } else {
+          updateStep(`exec-${i}`, 'completed');
         }
         advanceStep();
-      }
+      });
 
-      // Link to test sets
-      for (let i = 0; i < xrayLinking.testSetIds.length; i++) {
-        const stepId = `set-${i}`;
-        const testSetId = xrayLinking.testSetIds[i];
-        const display = xrayLinking.testSetDisplays[i]?.display || testSetId;
-
-        updateStep(stepId, 'in-progress');
-        const key = display.split(':')[0]?.trim();
-        try {
-          await xrayApi.addTestsToTestSet(testSetId, [testIssueId]);
-          updateStep(stepId, 'completed');
-          linkedItems.push({ label: display, key, type: 'set' });
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          updateStep(stepId, 'failed', errorMsg);
-          failedItems.push({ label: `Test Set: ${display}`, error: errorMsg });
-          hasErrors = true;
+      // Update set steps
+      xrayLinking.testSetIds.forEach((_, i) => {
+        const display = xrayLinking.testSetDisplays[i]?.display || xrayLinking.testSetIds[i];
+        const failedLabel = `Test Set: ${display}`;
+        if (failedLabels.has(failedLabel)) {
+          updateStep(`set-${i}`, 'failed', failedLabels.get(failedLabel));
+        } else {
+          updateStep(`set-${i}`, 'completed');
         }
         advanceStep();
-      }
+      });
 
-      // Link to folder
+      // Update folder step
       if (xrayLinking.folderPath && xrayLinking.projectId) {
-        updateStep('folder', 'in-progress');
-        try {
-          await xrayApi.addTestsToFolder(
-            xrayLinking.projectId,
-            xrayLinking.folderPath,
-            [testIssueId]
-          );
+        const failedLabel = `Folder: ${xrayLinking.folderPath}`;
+        if (failedLabels.has(failedLabel)) {
+          updateStep('folder', 'failed', failedLabels.get(failedLabel));
+        } else {
           updateStep('folder', 'completed');
-          linkedItems.push({ label: xrayLinking.folderPath, type: 'folder' });
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          updateStep('folder', 'failed', errorMsg);
-          failedItems.push({ label: `Folder: ${xrayLinking.folderPath}`, error: errorMsg });
-          hasErrors = true;
         }
         advanceStep();
       }
 
-      // Link preconditions
+      // Update preconditions step
       if (xrayLinking.preconditionIds.length > 0) {
-        updateStep('preconditions', 'in-progress');
-        try {
-          await xrayApi.addPreconditionsToTest(testIssueId, xrayLinking.preconditionIds);
+        if (failedLabels.has('Preconditions')) {
+          updateStep('preconditions', 'failed', failedLabels.get('Preconditions'));
+        } else {
           updateStep('preconditions', 'completed');
-          linkedItems.push({ label: `${xrayLinking.preconditionIds.length} precondition(s)`, type: 'precondition' });
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          updateStep('preconditions', 'failed', errorMsg);
-          failedItems.push({ label: 'Preconditions', error: errorMsg });
-          hasErrors = true;
         }
         advanceStep();
-      }
-
-      // Validation phase
-      setImportProgress(prev => ({
-        ...prev,
-        phase: 'validating',
-        linkedItems,
-        failedItems,
-        hasErrors,
-      }));
-
-      let validation: ValidationResult | null = null;
-      try {
-        const testLinks = await xrayApi.getTestLinks(testIssueId);
-
-        const expectedPlanIds = xrayLinking.testPlanIds;
-        const expectedExecIds = xrayLinking.testExecutionIds;
-        const expectedSetIds = xrayLinking.testSetIds;
-        const expectedPreconditionIds = xrayLinking.preconditionIds;
-        const expectedFolder = xrayLinking.folderPath !== '/' ? xrayLinking.folderPath : null;
-
-        const foundPlanIds = testLinks.testPlans.map(p => p.issueId);
-        const foundExecIds = testLinks.testExecutions.map(e => e.issueId);
-        const foundSetIds = testLinks.testSets.map(s => s.issueId);
-        const foundPreconditionIds = testLinks.preconditions.map(p => p.issueId);
-        const foundFolder = testLinks.folder || null;
-
-        const missingPlanIds = expectedPlanIds.filter(id => !foundPlanIds.includes(id));
-        const missingExecIds = expectedExecIds.filter(id => !foundExecIds.includes(id));
-        const missingSetIds = expectedSetIds.filter(id => !foundSetIds.includes(id));
-        const missingPreconditionIds = expectedPreconditionIds.filter(id => !foundPreconditionIds.includes(id));
-
-        validation = {
-          isValidated: true,
-          testPlans: { expected: expectedPlanIds, found: foundPlanIds, missing: missingPlanIds },
-          testExecutions: { expected: expectedExecIds, found: foundExecIds, missing: missingExecIds },
-          testSets: { expected: expectedSetIds, found: foundSetIds, missing: missingSetIds },
-          preconditions: { expected: expectedPreconditionIds, found: foundPreconditionIds, missing: missingPreconditionIds },
-          folder: {
-            expected: expectedFolder,
-            found: foundFolder,
-            valid: !expectedFolder || (foundFolder?.includes(expectedFolder) ?? false),
-          },
-        };
-
-        const hasMissingLinks =
-          missingPlanIds.length > 0 ||
-          missingExecIds.length > 0 ||
-          missingSetIds.length > 0 ||
-          missingPreconditionIds.length > 0 ||
-          (expectedFolder && !validation.folder.valid);
-
-        if (hasMissingLinks) {
-          hasErrors = true;
-        }
-      } catch (validationErr) {
-        console.error('Validation failed:', validationErr);
-        validation = {
-          isValidated: false,
-          testPlans: { expected: [], found: [], missing: [] },
-          testExecutions: { expected: [], found: [], missing: [] },
-          testSets: { expected: [], found: [], missing: [] },
-          preconditions: { expected: [], found: [], missing: [] },
-          folder: { expected: null, found: null, valid: true },
-        };
       }
 
       // Update final progress state
       setImportProgress(prev => ({
         ...prev,
         phase: 'complete',
-        linkedItems,
-        failedItems,
+        linkedItems: linkingResult.linkedItems,
+        failedItems: linkingResult.failedItems,
         isComplete: true,
-        hasErrors,
-        validation,
+        hasErrors: linkingResult.hasErrors,
+        validation: linkingResult.validation,
       }));
 
       setImporting(false);
