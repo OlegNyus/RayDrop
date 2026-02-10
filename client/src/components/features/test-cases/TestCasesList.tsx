@@ -4,7 +4,7 @@ import { useApp } from '../../../context/AppContext';
 import { Card, Button, StatusBadge, Input, TestKeyLink, ConfirmModal } from '../../ui';
 import { draftsApi, xrayApi } from '../../../services/api';
 import { executeLinking, countLinks } from '../../../hooks/useImportToXray';
-import type { LinkedItem, FailedItem, ValidationResult, LinkingResult } from '../../../hooks/useImportToXray';
+import type { LinkedItem, FailedItem, ValidationResult } from '../../../hooks/useImportToXray';
 import type { Draft, TestCaseStatus } from '../../../types';
 
 type SortField = 'updatedAt' | 'summary' | 'status';
@@ -679,7 +679,6 @@ function BulkImportProgressModal({
   if (!progress.isOpen) return null;
 
   const completedCount = progress.items.filter(i => i.status === 'completed').length;
-  const failedCount = progress.items.filter(i => i.status === 'failed').length;
   const totalCount = progress.items.length;
   // For progress: count items that are fully done (import + linking complete or no links)
   const fullyDoneCount = progress.items.filter(i =>

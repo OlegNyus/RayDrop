@@ -323,6 +323,46 @@ describe('TestCasesList', () => {
       });
     });
 
+    it('passes projectKey to xrayApi.import for each draft', async () => {
+      const user = userEvent.setup();
+      const importCalls: { draftIds: string[]; projectKey?: string }[] = [];
+
+      server.use(
+        http.post('*/api/xray/import', async ({ request }) => {
+          const body = await request.json() as { draftIds: string[]; projectKey?: string };
+          importCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: [`test-${importCalls.length}`],
+            testKeys: [`TEST-${100 + importCalls.length}`],
+          });
+        })
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select both ready test cases
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+      await user.click(checkboxes[2]);
+
+      await user.click(screen.getByText(/Import 2 to Xray/));
+
+      // Wait for completion
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 10000 });
+
+      // Each import call should include the projectKey from the draft
+      expect(importCalls).toHaveLength(2);
+      expect(importCalls[0].projectKey).toBe('TEST');
+      expect(importCalls[1].projectKey).toBe('TEST');
+    });
+
     it('imports test cases one by one with progress', async () => {
       const user = userEvent.setup();
       const importedKeys: string[] = [];

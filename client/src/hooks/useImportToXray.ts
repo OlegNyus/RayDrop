@@ -359,7 +359,6 @@ export function useImportToXray() {
       const linkingResult = await executeLinking(testIssueId, xrayLinking);
 
       // Map linking results back to step UI status
-      const linkedLabels = new Set(linkingResult.linkedItems.map(l => l.label));
       const failedLabels = new Map(linkingResult.failedItems.map(f => [f.label, f.error]));
 
       // Update plan steps
