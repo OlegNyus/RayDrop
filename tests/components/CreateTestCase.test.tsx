@@ -587,4 +587,239 @@ describe('CreateTestCase', () => {
       });
     });
   });
+
+  describe('TC-Create-U002: Reusable TC Xray link pre-population', () => {
+    const mockReusableTests = [
+      {
+        issueId: '99001',
+        key: 'WCP-9999',
+        summary: 'Organization | UI | REUSE Login Test',
+        description: 'Login test description',
+        testType: 'Manual',
+        priority: 'High',
+        labels: ['Regression'],
+        steps: [
+          { id: 'step-1', action: 'Open login page', data: '', result: 'Login page is displayed' },
+        ],
+      },
+    ];
+
+    const fullMockTestLinks = {
+      issueId: '99001',
+      key: 'WCP-9999',
+      testPlans: [{ issueId: '10001', key: 'WCP-7067', summary: 'Sprint 1 Test Plan' }],
+      testExecutions: [{ issueId: '10003', key: 'WCP-7069', summary: 'Release 1.0 Execution' }],
+      testSets: [{ issueId: '10004', key: 'WCP-7154', summary: 'Smoke Tests' }],
+      preconditions: [{ issueId: '10006', key: 'WCP-9209', summary: 'User is logged in' }],
+      folder: '/WCP/UI/Feature',
+    };
+
+    // Shared setup for all tests in this block
+    beforeEach(() => {
+      server.use(
+        http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json(mockTestPlans)),
+        http.get('*/api/xray/test-executions/:projectKey', () => HttpResponse.json(mockTestExecutions)),
+        http.get('*/api/xray/test-sets/:projectKey', () => HttpResponse.json(mockTestSets)),
+        http.get('*/api/xray/preconditions/:projectKey', () => HttpResponse.json(mockPreconditions)),
+        http.get('*/api/xray/project-id/:projectKey', () => HttpResponse.json({ projectId: 'proj-123' })),
+        http.get('*/api/xray/folders/:projectId', () => HttpResponse.json(mockFolders)),
+        http.get('*/api/settings/projects/:projectKey', () => {
+          return HttpResponse.json({
+            color: '#3B82F6',
+            functionalAreas: ['UI', 'API'],
+            reusablePrefix: 'REUSE',
+          });
+        }),
+        http.get('*/api/xray/tests/by-prefix/:projectKey', () => {
+          return HttpResponse.json(mockReusableTests);
+        }),
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json(fullMockTestLinks);
+        }),
+      );
+    });
+
+    // Helper: select the reusable TC and wait for editor
+    async function selectReusableTC(user: ReturnType<typeof userEvent.setup>) {
+      await waitFor(() => {
+        expect(screen.getByText('From Reusable TC')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByText('From Reusable TC'));
+      await waitFor(() => {
+        expect(screen.getByText('WCP-9999')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText(/REUSE Login Test/));
+      await waitFor(() => {
+        expect(screen.getByText('Basic Info')).toBeInTheDocument();
+      });
+    }
+
+    // Helper: navigate from step 1 to step 3
+    async function goToStep3Reusable() {
+      fireEvent.click(screen.getByText('Next →'));
+      await waitFor(() => {
+        expect(screen.getByText('+ Add Step')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByText('Next →'));
+      await waitFor(() => {
+        expect(screen.getByText('Update in Xray')).toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      });
+    }
+
+    it('shows "Editing WCP-9999" badge after selecting reusable TC', async () => {
+      const user = userEvent.setup();
+      renderCreateTestCase();
+      await selectReusableTC(user);
+
+      expect(screen.getByText('Editing WCP-9999')).toBeInTheDocument();
+    });
+
+    it('shows "Update in Xray" button instead of "Import to Xray" for reusable TC', async () => {
+      const user = userEvent.setup();
+      renderCreateTestCase();
+      await selectReusableTC(user);
+      await goToStep3Reusable();
+
+      expect(screen.getByText('Update in Xray')).toBeInTheDocument();
+      expect(screen.queryByText('Import to Xray')).not.toBeInTheDocument();
+    });
+
+    it('pre-populates folder path from linked test', async () => {
+      const user = userEvent.setup();
+      renderCreateTestCase();
+      await selectReusableTC(user);
+      await goToStep3Reusable();
+
+      // Folder path displays inside a button as text content
+      expect(screen.getByText('/WCP/UI/Feature')).toBeInTheDocument();
+    });
+
+    it('keeps empty xray links when getTestLinks API fails', async () => {
+      const user = userEvent.setup();
+
+      // Override links endpoint to fail
+      server.use(
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json({ error: 'Not found' }, { status: 500 });
+        }),
+      );
+
+      renderCreateTestCase();
+      await selectReusableTC(user);
+      await goToStep3Reusable();
+
+      // No link tags should be visible — dropdowns should be empty
+      const comboboxes = screen.getAllByRole('combobox');
+      // Open the test plans dropdown
+      await user.click(comboboxes[0]);
+
+      // Options should be available (from xray cache), but no tags pre-selected
+      await waitFor(() => {
+        expect(screen.getByText('WCP-7067')).toBeInTheDocument();
+      });
+
+      // The selected tags would be inside span elements inside the combobox container
+      // Since no links were fetched, there should be no selected tag spans
+      // Verify the folder path is still default "/" not a fetched value
+      expect(screen.queryByText('/WCP/UI/Feature')).not.toBeInTheDocument();
+    });
+
+    it('handles partial links — only test plans and folder, no other entities', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json({
+            issueId: '99001',
+            key: 'WCP-9999',
+            testPlans: [{ issueId: '10001', key: 'WCP-7067', summary: 'Sprint 1 Test Plan' }],
+            testExecutions: [],
+            testSets: [],
+            preconditions: [],
+            folder: '/WCP/Partial',
+          });
+        }),
+      );
+
+      renderCreateTestCase();
+      await selectReusableTC(user);
+      await goToStep3Reusable();
+
+      // Test plan tag should be visible
+      expect(screen.getByText('WCP-7067')).toBeInTheDocument();
+      // Folder should be the partial one
+      expect(screen.getByText('/WCP/Partial')).toBeInTheDocument();
+      // No test execution, test set, or precondition tags
+      expect(screen.queryByText('WCP-7069')).not.toBeInTheDocument();
+      expect(screen.queryByText('WCP-7154')).not.toBeInTheDocument();
+      expect(screen.queryByText('WCP-9209')).not.toBeInTheDocument();
+    });
+
+    it('handles multiple links per category', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json({
+            issueId: '99001',
+            key: 'WCP-9999',
+            testPlans: [
+              { issueId: '10001', key: 'WCP-7067', summary: 'Sprint 1 Test Plan' },
+              { issueId: '10002', key: 'WCP-7068', summary: 'Sprint 2 Test Plan' },
+            ],
+            testExecutions: [{ issueId: '10003', key: 'WCP-7069', summary: 'Release 1.0 Execution' }],
+            testSets: [
+              { issueId: '10004', key: 'WCP-7154', summary: 'Smoke Tests' },
+              { issueId: '10005', key: 'WCP-7155', summary: 'Regression Tests' },
+            ],
+            preconditions: [],
+            folder: '/WCP/Multi',
+          });
+        }),
+      );
+
+      renderCreateTestCase();
+      await selectReusableTC(user);
+      await goToStep3Reusable();
+
+      // Both test plan tags should appear
+      expect(screen.getByText('WCP-7067')).toBeInTheDocument();
+      expect(screen.getByText('WCP-7068')).toBeInTheDocument();
+      // Both test set tags should appear
+      expect(screen.getByText('WCP-7154')).toBeInTheDocument();
+      expect(screen.getByText('WCP-7155')).toBeInTheDocument();
+      // Single test execution tag
+      expect(screen.getByText('WCP-7069')).toBeInTheDocument();
+    });
+
+    it('preserves default folder path when links have no folder', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json({
+            issueId: '99001',
+            key: 'WCP-9999',
+            testPlans: [{ issueId: '10001', key: 'WCP-7067', summary: 'Sprint 1 Test Plan' }],
+            testExecutions: [],
+            testSets: [],
+            preconditions: [],
+            // folder is undefined — should keep whatever default the draft has
+          });
+        }),
+      );
+
+      renderCreateTestCase();
+      await selectReusableTC(user);
+      await goToStep3Reusable();
+
+      // Link tag should still appear
+      expect(screen.getByText('WCP-7067')).toBeInTheDocument();
+      // Folder should NOT be set to a fetched value — remains as empty/default
+      expect(screen.queryByText('/WCP/UI/Feature')).not.toBeInTheDocument();
+    });
+  });
 });

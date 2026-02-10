@@ -5,7 +5,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, Card, StatusBadge, ConfirmModal, ImportProgressModal } from '../../ui';
 import { draftsApi, settingsApi, xrayApi } from '../../../services/api';
-import type { Draft, TestStep, ProjectSettings } from '../../../types';
+import type { Draft, TestStep, ProjectSettings, TestLinks } from '../../../types';
 import {
   type Step,
   type XrayCache,
@@ -61,6 +61,38 @@ export function EditTestCase() {
         setLoading(true);
         setError(null);
         const fetchedDraft = await draftsApi.get(id);
+
+        // For reusable TCs with empty linking, fetch links from Xray
+        if (fetchedDraft.isReusable && fetchedDraft.sourceTestIssueId) {
+          const { xrayLinking } = fetchedDraft;
+          const hasLinks = xrayLinking.testPlanIds.length > 0 ||
+                           xrayLinking.testExecutionIds.length > 0 ||
+                           xrayLinking.testSetIds.length > 0 ||
+                           xrayLinking.preconditionIds.length > 0;
+          if (!hasLinks) {
+            try {
+              const links: TestLinks = await xrayApi.getTestLinks(fetchedDraft.sourceTestIssueId);
+              const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
+                items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
+
+              fetchedDraft.xrayLinking = {
+                ...fetchedDraft.xrayLinking,
+                testPlanIds: links.testPlans.map(t => t.issueId),
+                testPlanDisplays: mapDisplays(links.testPlans),
+                testExecutionIds: links.testExecutions.map(t => t.issueId),
+                testExecutionDisplays: mapDisplays(links.testExecutions),
+                testSetIds: links.testSets.map(t => t.issueId),
+                testSetDisplays: mapDisplays(links.testSets),
+                preconditionIds: links.preconditions.map(t => t.issueId),
+                preconditionDisplays: mapDisplays(links.preconditions),
+                folderPath: links.folder || fetchedDraft.xrayLinking.folderPath,
+              };
+            } catch (err) {
+              console.error('Failed to fetch test links for reusable TC:', err);
+            }
+          }
+        }
+
         setDraft(fetchedDraft);
         setOriginalDraft(fetchedDraft);
         setNotFound(false);

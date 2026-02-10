@@ -11,6 +11,8 @@ import userEvent from '@testing-library/user-event';
 
 const DRAFT_ID = 'test-draft-001';
 
+const REUSABLE_DRAFT_ID = 'test-draft-reusable';
+
 const mockDraft = {
   id: DRAFT_ID,
   summary: 'Alert | UI | Test Login Flow',
@@ -37,6 +39,44 @@ const mockDraft = {
   createdAt: Date.now(),
   isComplete: false,
   projectKey: 'WCP',
+};
+
+// Reusable TC draft with empty xrayLinking (saved before link pre-population fix)
+const mockReusableDraft = {
+  ...mockDraft,
+  id: REUSABLE_DRAFT_ID,
+  summary: 'Organization | UI | REUSE Login Test',
+  isReusable: true,
+  sourceTestKey: 'WCP-9448',
+  sourceTestIssueId: '99001',
+};
+
+// Reusable TC draft that already has saved links
+const mockReusableDraftWithLinks = {
+  ...mockReusableDraft,
+  id: 'test-draft-with-links',
+  xrayLinking: {
+    testPlanIds: ['20001'],
+    testPlanDisplays: [{ id: '20001', display: 'WCP-8000: Saved Plan' }],
+    testExecutionIds: ['20002'],
+    testExecutionDisplays: [{ id: '20002', display: 'WCP-8001: Saved Execution' }],
+    testSetIds: ['20003'],
+    testSetDisplays: [{ id: '20003', display: 'WCP-8002: Saved Set' }],
+    preconditionIds: [],
+    preconditionDisplays: [],
+    folderPath: '/Saved/Path',
+    projectId: 'proj-123',
+  },
+};
+
+const mockTestLinks = {
+  issueId: '99001',
+  key: 'WCP-9448',
+  testPlans: [{ issueId: '10001', key: 'WCP-7067', summary: 'Sprint 1 Test Plan' }],
+  testExecutions: [{ issueId: '10003', key: 'WCP-7069', summary: 'Release 1.0 Execution' }],
+  testSets: [{ issueId: '10004', key: 'WCP-7154', summary: 'Smoke Tests' }],
+  preconditions: [{ issueId: '10006', key: 'WCP-9209', summary: 'User is logged in' }],
+  folder: '/WCP/UI/Feature',
 };
 
 const mockTestPlans = [
@@ -232,6 +272,179 @@ describe('EditTestCase', () => {
       await waitFor(() => {
         expect(screen.getByText('WCP-9209')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('TC-Edit-U002: Reusable TC Xray link pre-population on Edit', () => {
+    beforeEach(() => {
+      // Xray cache endpoints (dropdown options)
+      server.use(
+        http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json(mockTestPlans)),
+        http.get('*/api/xray/test-executions/:projectKey', () => HttpResponse.json(mockTestExecutions)),
+        http.get('*/api/xray/test-sets/:projectKey', () => HttpResponse.json(mockTestSets)),
+        http.get('*/api/xray/preconditions/:projectKey', () => HttpResponse.json(mockPreconditions)),
+        http.get('*/api/xray/project-id/:projectKey', () => HttpResponse.json({ projectId: 'proj-123' })),
+        http.get('*/api/xray/folders/:projectId', () => HttpResponse.json(mockFolders)),
+        // Test links endpoint
+        http.get('*/api/xray/tests/:issueId/links', () => HttpResponse.json(mockTestLinks)),
+      );
+    });
+
+    it('fetches and displays Xray links as tags for reusable TC with empty linking', async () => {
+      // Serve the reusable draft with empty xrayLinking
+      server.use(
+        http.get(`*/api/drafts/${REUSABLE_DRAFT_ID}`, () => HttpResponse.json(mockReusableDraft)),
+        http.get('*/api/drafts', () => HttpResponse.json([mockReusableDraft])),
+      );
+
+      renderEditTestCase(REUSABLE_DRAFT_ID);
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit Test Case')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      });
+
+      // Verify all 4 link tags are pre-populated from Xray
+      await waitFor(() => {
+        expect(screen.getByText('WCP-7067')).toBeInTheDocument(); // Test Plan
+        expect(screen.getByText('WCP-7069')).toBeInTheDocument(); // Test Execution
+        expect(screen.getByText('WCP-7154')).toBeInTheDocument(); // Test Set
+        expect(screen.getByText('WCP-9209')).toBeInTheDocument(); // Precondition
+      });
+    });
+
+    it('pre-populates folder path from Xray links', async () => {
+      server.use(
+        http.get(`*/api/drafts/${REUSABLE_DRAFT_ID}`, () => HttpResponse.json(mockReusableDraft)),
+        http.get('*/api/drafts', () => HttpResponse.json([mockReusableDraft])),
+      );
+
+      renderEditTestCase(REUSABLE_DRAFT_ID);
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit Test Case')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      // Folder path should be set from fetched links
+      await waitFor(() => {
+        expect(screen.getByText('/WCP/UI/Feature')).toBeInTheDocument();
+      });
+    });
+
+    it('shows "Editing WCP-9448" badge for reusable TC', async () => {
+      server.use(
+        http.get(`*/api/drafts/${REUSABLE_DRAFT_ID}`, () => HttpResponse.json(mockReusableDraft)),
+        http.get('*/api/drafts', () => HttpResponse.json([mockReusableDraft])),
+      );
+
+      renderEditTestCase(REUSABLE_DRAFT_ID);
+
+      await waitFor(() => {
+        expect(screen.getByText('Editing WCP-9448')).toBeInTheDocument();
+      });
+    });
+
+    it('shows "Update in Xray" button for reusable TC on step 3', async () => {
+      server.use(
+        http.get(`*/api/drafts/${REUSABLE_DRAFT_ID}`, () => HttpResponse.json(mockReusableDraft)),
+        http.get('*/api/drafts', () => HttpResponse.json([mockReusableDraft])),
+      );
+
+      renderEditTestCase(REUSABLE_DRAFT_ID);
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit Test Case')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      expect(screen.getByText('Update in Xray')).toBeInTheDocument();
+      expect(screen.queryByText('Import to Xray')).not.toBeInTheDocument();
+    });
+
+    it('does NOT overwrite existing saved links', async () => {
+      const draftId = mockReusableDraftWithLinks.id;
+      server.use(
+        http.get(`*/api/drafts/${draftId}`, () => HttpResponse.json(mockReusableDraftWithLinks)),
+        http.get('*/api/drafts', () => HttpResponse.json([mockReusableDraftWithLinks])),
+      );
+
+      renderEditTestCase(draftId);
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit Test Case')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      });
+
+      // Should show the SAVED links, not the Xray-fetched ones
+      expect(screen.getByText('WCP-8000')).toBeInTheDocument(); // Saved Plan
+      expect(screen.getByText('WCP-8001')).toBeInTheDocument(); // Saved Execution
+      expect(screen.getByText('WCP-8002')).toBeInTheDocument(); // Saved Set
+      expect(screen.getByText('/Saved/Path')).toBeInTheDocument();
+
+      // Should NOT show Xray-fetched links
+      expect(screen.queryByText('WCP-7067')).not.toBeInTheDocument();
+      expect(screen.queryByText('WCP-7069')).not.toBeInTheDocument();
+    });
+
+    it('handles getTestLinks API failure gracefully — no crash, links stay empty', async () => {
+      server.use(
+        http.get(`*/api/drafts/${REUSABLE_DRAFT_ID}`, () => HttpResponse.json(mockReusableDraft)),
+        http.get('*/api/drafts', () => HttpResponse.json([mockReusableDraft])),
+        // Override links endpoint to fail
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json({ error: 'Server error' }, { status: 500 });
+        }),
+      );
+
+      renderEditTestCase(REUSABLE_DRAFT_ID);
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit Test Case')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      });
+
+      // No link tags should be shown since API failed
+      expect(screen.queryByText('WCP-7067')).not.toBeInTheDocument();
+      expect(screen.queryByText('WCP-7069')).not.toBeInTheDocument();
+      expect(screen.queryByText('WCP-7154')).not.toBeInTheDocument();
+      expect(screen.queryByText('WCP-9209')).not.toBeInTheDocument();
+    });
+
+    it('does NOT fetch links for non-reusable drafts', async () => {
+      // mockDraft is non-reusable — should not attempt to fetch links
+      // If it did, it would crash since sourceTestIssueId is undefined
+      renderEditTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit Test Case')).toBeInTheDocument();
+      });
+
+      await navigateToStep3();
+
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      });
+
+      // No link tags — the non-reusable draft has empty xrayLinking
+      expect(screen.queryByText('WCP-7067')).not.toBeInTheDocument();
     });
   });
 });
