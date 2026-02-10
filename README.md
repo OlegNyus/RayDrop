@@ -1,207 +1,114 @@
 # RayDrop
 
-A desktop companion app for Xray Cloud that makes creating and managing test cases faster and easier.
+Local companion app for creating and managing Xray Cloud test cases.
 
-## What is RayDrop?
+## Setup
 
-RayDrop is a local web application that connects to your Jira/Xray Cloud instance and provides a streamlined interface for:
+### 1. Install Node.js
 
-- **Creating Test Cases** - Write test cases with a guided workflow (Basic Info → Test Steps → Xray Linking)
-- **Managing Drafts** - Save work locally, review and edit before importing to Xray
-- **Bulk Import** - Import multiple test cases to Xray at once
-- **Browsing Xray Entities** - View Test Sets, Test Plans, Test Executions, and Preconditions
-- **TC Review** - See all tests with "Under Review" status in one place
+Download and install Node.js **v20.19+** or **v22.12+** from https://nodejs.org (LTS recommended).
 
-## Why RayDrop?
-
-- **Works Offline** - Draft test cases locally without constant Jira connection
-- **Faster Workflow** - Streamlined UI focused on test case creation
-- **Bulk Operations** - Select multiple test cases and import them all at once
-- **Code Snippets** - Add JSON/JS/TS code to test data fields with syntax highlighting
-- **Multi-Project** - Switch between Jira projects easily
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20.19+ or 22.12+
-- npm
-- Xray Cloud credentials (Client ID and Client Secret)
-
-### Installation
+Verify it's installed:
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/RayDrop.git
-cd RayDrop
+node -v
+npm -v
+```
 
-# Install all dependencies
+Both commands should print a version number.
+
+### 2. Install Git
+
+Download from https://git-scm.com/downloads and install with default settings.
+
+Verify:
+
+```bash
+git --version
+```
+
+### 3. Clone and install
+
+Open Terminal (Mac) or Command Prompt (Windows) and run:
+
+```bash
+git clone https://github.com/OlegNyus/RayDrop.git
+cd RayDrop
 npm install
 npm install --prefix client
 npm install --prefix server
 ```
 
-### Running the App
+### 4. Start the app
 
 ```bash
-# Start both client and server
 npm run dev
 ```
 
 Open http://localhost:5173 in your browser.
 
-### First-Time Setup
+### 5. Connect to Xray
 
-1. **Connect to Xray** - Enter your Xray Cloud API credentials:
-   - Client ID
-   - Client Secret
-   - Jira Base URL (e.g., `https://yourcompany.atlassian.net`)
+On first launch you'll see the Setup page. Enter:
 
-2. **Add a Project** - Enter a Jira project key (e.g., `WCP`) to start working
+- **Xray Client ID** and **Client Secret** — get these from your Xray Cloud API Keys (Settings > API Keys in Xray)
+- **Jira Base URL** — your Atlassian URL, e.g. `https://yourcompany.atlassian.net`
 
-3. **Create Test Cases** - Navigate to "Create Test Case" and start writing
+Click **Test & Save**. If credentials are valid, you're connected.
 
-## How It Works
+### 6. Add a project
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   RayDrop   │────▶│   Express   │────▶│  Xray Cloud │
-│   (React)   │◀────│   Server    │◀────│     API     │
-└─────────────┘     └─────────────┘     └─────────────┘
-        │                  │
-        │                  ▼
-        │           ┌─────────────┐
-        └──────────▶│ Local Files │
-                    │ (JSON)      │
-                    └─────────────┘
-```
+Enter a Jira project key (e.g. `WCP`) and click Add. The project appears in the sidebar.
 
-- **Client** (React) - The UI you interact with at http://localhost:5173
-- **Server** (Express) - Handles API calls to Xray and stores data locally
-- **Local Storage** - Test case drafts and settings saved as JSON files
-
-### Data Storage
-
-All your data is stored locally in the project folder:
-
-| Data | Location | Contents |
-|------|----------|----------|
-| Credentials | `config/xray-config.json` | Xray API credentials |
-| Settings | `config/settings.json` | Projects, preferences |
-| Test Cases | `testCases/` | Draft test cases organized by project |
-
-**Note:** These folders are gitignored. Your data won't be lost when pulling updates.
-
-## Test Case Workflow
-
-```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────┐
-│   New   │───▶│  Draft  │───▶│  Ready  │───▶│ Imported │
-└─────────┘    └─────────┘    └─────────┘    └──────────┘
-     │              │              │               │
-     │         Save work      Complete &      Exists in
-   Start         locally      validated         Xray
-```
-
-1. **New** - Just created, not yet saved
-2. **Draft** - Work in progress, saved locally
-3. **Ready** - Complete with all required fields, can be imported
-4. **Imported** - Successfully created in Xray
-
-## Features
-
-### Test Case Creation
-
-- Summary builder with Functional Area + Layer + Title
-- Multi-step test steps with drag-and-drop reordering
-- Code snippet support in test data fields (JSON, JS, TS)
-- Labels and priority selection
-
-### Xray Linking
-
-- Link to Test Plans, Test Sets, Test Executions
-- Add Preconditions
-- Assign to Xray folders
-
-### Bulk Operations
-
-- Select multiple test cases
-- Mark as Ready (validates required fields)
-- Import to Xray in bulk
-
-### Browse Xray Entities
-
-- View Test Sets, Test Plans, Test Executions, Preconditions
-- See test counts and execution status
-- Navigate to detailed views
-
-## Tech Stack
-
-- **Client**: React 19 + Vite + TypeScript + Tailwind CSS
-- **Server**: Express + TypeScript
-- **Testing**: Vitest + React Testing Library + Playwright
-
-## Development
-
-### Running in Development
+## Daily use
 
 ```bash
-# Run both client and server with hot reload
+cd RayDrop
 npm run dev
-
-# Or run separately
-npm run dev:client  # http://localhost:5173
-npm run dev:server  # http://localhost:3001
 ```
 
-### Building for Production
+Open http://localhost:5173. That's it.
+
+## Updating
 
 ```bash
-npm run build
+cd RayDrop
+git pull
+npm install
+npm install --prefix client
+npm install --prefix server
+npm run dev
 ```
 
-### Running Tests
+Your test case drafts and settings are preserved — they're stored in `config/` and `testCases/` which are gitignored.
 
+## Backup
+
+Copy these folders to keep your data safe:
+
+- `config/` — credentials and settings
+- `testCases/` — all your draft test cases
+
+## Troubleshooting
+
+**`node: command not found`** — Node.js isn't installed or not in your PATH. Reinstall from https://nodejs.org and restart your terminal.
+
+**`npm install` fails with permission errors** — On Mac, try `sudo npm install`. On Windows, run Command Prompt as Administrator.
+
+**Port 5173 already in use** — Another instance is running. Close it or kill the process:
 ```bash
-# Unit/Integration tests
-npm test
-
-# E2E tests
-npm run test:e2e
-
-# All tests
-npm run test:all
+# Mac/Linux
+lsof -ti:5173 | xargs kill
+# Windows
+netstat -ano | findstr :5173
+taskkill /PID <PID> /F
 ```
 
-## Project Structure
+**Port 3001 already in use** — Same as above but for port 3001 (the server).
 
-```
-RayDrop/
-├── client/                 # React frontend
-│   └── src/
-│       ├── components/     # UI components
-│       ├── context/        # React contexts
-│       ├── services/       # API client
-│       └── types/          # TypeScript types
-├── server/                 # Express backend
-│   └── src/
-│       ├── routes/         # API endpoints
-│       └── utils/          # Xray client, file operations
-├── tests/                  # Unit/Integration tests
-├── e2e/                    # E2E tests (Playwright)
-├── config/                 # Runtime config (gitignored)
-└── testCases/              # Test case drafts (gitignored)
-```
+**`Test & Save` fails with "Invalid credentials"** — Double-check your Xray Client ID and Client Secret. Make sure there are no trailing spaces.
 
-## Backup & Data Safety
-
-Your local data is safe during normal git operations (`pull`, `merge`, `checkout`).
-
-**To backup your data**, copy these folders:
-- `config/` - Your credentials and settings
-- `testCases/` - All your test case drafts
-
-**Caution:** Running `git clean -fd` will delete these folders!
+**App loads but shows no data** — Make sure you've added at least one project in Settings and it matches a real Jira project key.
 
 ## License
 
