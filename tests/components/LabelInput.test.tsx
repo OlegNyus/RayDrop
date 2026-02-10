@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor, renderWithTheme, fireEvent } from '../helpers/render';
-import { TagInput } from '../../client/src/components/ui/TagInput';
+import { LabelInput } from '../../client/src/components/ui/LabelInput';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
-describe('TagInput', () => {
+describe('LabelInput', () => {
   const mockOnChange = vi.fn();
 
   beforeEach(() => {
@@ -25,29 +25,29 @@ describe('TagInput', () => {
   });
 
   describe('Initial Rendering', () => {
-    it('renders with default placeholder when no tags', () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+    it('renders with default placeholder when no labels', () => {
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
       expect(screen.getByText('Search or create...')).toBeInTheDocument();
     });
 
     it('renders with custom placeholder', () => {
       renderWithTheme(
-        <TagInput tags={[]} onChange={mockOnChange} placeholder="Add labels..." />
+        <LabelInput labels={[]} onChange={mockOnChange} placeholder="Add labels..." />
       );
       expect(screen.getByText('Add labels...')).toBeInTheDocument();
     });
 
-    it('displays existing tags', () => {
+    it('displays existing labels', () => {
       renderWithTheme(
-        <TagInput tags={['bug', 'feature']} onChange={mockOnChange} />
+        <LabelInput labels={['bug', 'feature']} onChange={mockOnChange} />
       );
       expect(screen.getByText('bug')).toBeInTheDocument();
       expect(screen.getByText('feature')).toBeInTheDocument();
     });
 
-    it('renders remove buttons for each tag', () => {
+    it('renders remove buttons for each label', () => {
       renderWithTheme(
-        <TagInput tags={['bug', 'feature']} onChange={mockOnChange} />
+        <LabelInput labels={['bug', 'feature']} onChange={mockOnChange} />
       );
       const removeButtons = screen.getAllByRole('button');
       expect(removeButtons.length).toBe(2);
@@ -55,7 +55,7 @@ describe('TagInput', () => {
 
     it('applies disabled styles when disabled', () => {
       renderWithTheme(
-        <TagInput tags={[]} onChange={mockOnChange} disabled />
+        <LabelInput labels={[]} onChange={mockOnChange} disabled />
       );
       const container = screen.getByText('Search or create...').closest('div');
       expect(container).toHaveClass('opacity-60', 'cursor-not-allowed');
@@ -63,7 +63,7 @@ describe('TagInput', () => {
 
     it('does not show remove buttons when disabled', () => {
       renderWithTheme(
-        <TagInput tags={['bug']} onChange={mockOnChange} disabled />
+        <LabelInput labels={['bug']} onChange={mockOnChange} disabled />
       );
       expect(screen.getByText('bug')).toBeInTheDocument();
       const buttons = screen.queryAllByRole('button');
@@ -73,7 +73,7 @@ describe('TagInput', () => {
 
   describe('Dropdown Behavior', () => {
     it('opens dropdown on container click', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -85,7 +85,7 @@ describe('TagInput', () => {
     });
 
     it('does not open dropdown when disabled', () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} disabled />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} disabled />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -94,7 +94,7 @@ describe('TagInput', () => {
     });
 
     it('shows listbox when dropdown is open', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -105,7 +105,7 @@ describe('TagInput', () => {
     });
 
     it('loads and displays available labels from API', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -121,7 +121,7 @@ describe('TagInput', () => {
     });
 
     it('filters labels based on input', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -145,7 +145,7 @@ describe('TagInput', () => {
     });
 
     it('shows "Create" option for new labels', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -163,7 +163,7 @@ describe('TagInput', () => {
     });
 
     it('shows hint to create new label when dropdown is open', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -179,7 +179,7 @@ describe('TagInput', () => {
     });
 
     it('closes dropdown on Escape key', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -197,7 +197,7 @@ describe('TagInput', () => {
     });
 
     it('closes dropdown on Tab key', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -215,9 +215,9 @@ describe('TagInput', () => {
     });
   });
 
-  describe('Tag Selection', () => {
+  describe('Label Selection', () => {
     it('calls onChange when clicking a label in dropdown', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -240,7 +240,7 @@ describe('TagInput', () => {
     });
 
     it('creates new label on Enter with input text', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -256,9 +256,9 @@ describe('TagInput', () => {
       expect(mockOnChange).toHaveBeenCalledWith(['newlabel']);
     });
 
-    it('removes tag on remove button click', () => {
+    it('removes label on remove button click', () => {
       renderWithTheme(
-        <TagInput tags={['bug', 'feature']} onChange={mockOnChange} />
+        <LabelInput labels={['bug', 'feature']} onChange={mockOnChange} />
       );
 
       const removeButtons = screen.getAllByRole('button');
@@ -267,9 +267,9 @@ describe('TagInput', () => {
       expect(mockOnChange).toHaveBeenCalledWith(['feature']);
     });
 
-    it('removes second tag when clicking its remove button', () => {
+    it('removes second label when clicking its remove button', () => {
       renderWithTheme(
-        <TagInput tags={['bug', 'feature']} onChange={mockOnChange} />
+        <LabelInput labels={['bug', 'feature']} onChange={mockOnChange} />
       );
 
       const removeButtons = screen.getAllByRole('button');
@@ -281,7 +281,7 @@ describe('TagInput', () => {
 
   describe('Keyboard Navigation', () => {
     it('keeps dropdown open on ArrowDown', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -297,7 +297,7 @@ describe('TagInput', () => {
     });
 
     it('responds to Enter key', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -329,7 +329,7 @@ describe('TagInput', () => {
         })
       );
 
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -355,7 +355,7 @@ describe('TagInput', () => {
         })
       );
 
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -376,7 +376,7 @@ describe('TagInput', () => {
 
   describe('Accessibility', () => {
     it('has combobox role when open', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -389,7 +389,7 @@ describe('TagInput', () => {
     });
 
     it('has listbox role for dropdown', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -400,7 +400,7 @@ describe('TagInput', () => {
     });
 
     it('has option role for each label', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -418,7 +418,7 @@ describe('TagInput', () => {
 
   describe('Edge Cases', () => {
     it('trims whitespace from new labels', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
@@ -441,7 +441,7 @@ describe('TagInput', () => {
         })
       );
 
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const container = screen.getByText('Search or create...').closest('div');
       fireEvent.click(container!);
@@ -453,7 +453,7 @@ describe('TagInput', () => {
     });
 
     it('processes input on Enter key', async () => {
-      renderWithTheme(<TagInput tags={[]} onChange={mockOnChange} />);
+      renderWithTheme(<LabelInput labels={[]} onChange={mockOnChange} />);
 
       const combobox = screen.getByRole('combobox');
       fireEvent.click(combobox);
