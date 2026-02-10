@@ -3,6 +3,18 @@
 /** Safely convert a value to string — handles ADF objects, null, undefined */
 export const safeString = (val: unknown): string => typeof val === 'string' ? val : '';
 
+/** Check if a summary string has a title (not just Area | Layer) */
+export const summaryHasTitle = (summary: string): boolean => {
+  const parts = summary.split(' | ');
+  if (parts.length === 2) return false;
+  if (parts.length === 3 && !parts[2].trim()) return false;
+  return summary.trim().length > 0;
+};
+
+/** Convert Xray linked entities to display format for SearchableMultiSelect */
+export const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
+  items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
+
 // Config Types
 export interface Config {
   configured: boolean;

@@ -5,7 +5,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, StatusBadge, ImportProgressModal } from '../../ui';
 import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
-import { safeString } from '../../../types';
+import { safeString, mapDisplays, summaryHasTitle } from '../../../types';
 import type { Draft, TestStep, ProjectSettings, TestDetails, TestLinks } from '../../../types';
 import {
   type Step,
@@ -136,16 +136,6 @@ export function CreateTestCase() {
   };
 
   // Helper to check if summary has a valid Title (not just Functional Area + Layer)
-  const summaryHasTitle = (summary: string): boolean => {
-    const parts = summary.split(' | ');
-    // If 2 parts (Area | Layer), title is missing
-    if (parts.length === 2) return false;
-    // If 3 parts, third part (Title) must not be empty
-    if (parts.length === 3 && !parts[2].trim()) return false;
-    // 1 part = just a title (valid), or 3 parts with non-empty title (valid)
-    return summary.trim().length > 0;
-  };
-
   const isStep1Valid = () => summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0;
   const isStep2Valid = () => draft.steps.every(s => s.action.trim() && s.result.trim());
 
@@ -312,9 +302,6 @@ export function CreateTestCase() {
     } catch (err) {
       console.error('Failed to fetch test links:', err);
     }
-
-    const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
-      items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
 
     setDraft(d => ({
       ...d,

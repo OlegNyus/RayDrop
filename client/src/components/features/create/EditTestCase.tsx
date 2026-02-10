@@ -5,7 +5,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, Card, StatusBadge, ConfirmModal, ImportProgressModal } from '../../ui';
 import { draftsApi, settingsApi, xrayApi } from '../../../services/api';
-import { safeString } from '../../../types';
+import { safeString, mapDisplays, summaryHasTitle } from '../../../types';
 import type { Draft, TestStep, ProjectSettings, TestLinks } from '../../../types';
 import {
   type Step,
@@ -30,7 +30,6 @@ export function EditTestCase() {
   const { importProgress, importing, startImport, executeImport, closeModal } = useImportToXray();
 
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [_originalDraft, setOriginalDraft] = useState<Draft | null>(null);
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -73,8 +72,6 @@ export function EditTestCase() {
           if (!hasLinks) {
             try {
               const links: TestLinks = await xrayApi.getTestLinks(fetchedDraft.sourceTestIssueId);
-              const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
-                items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
 
               fetchedDraft.xrayLinking = {
                 ...fetchedDraft.xrayLinking,
@@ -95,7 +92,6 @@ export function EditTestCase() {
         }
 
         setDraft(fetchedDraft);
-        setOriginalDraft(fetchedDraft);
         setNotFound(false);
       } catch (err) {
         console.error('Failed to load draft:', err);
@@ -213,17 +209,6 @@ export function EditTestCase() {
     }
   };
 
-  // Helper to check if summary has a valid Title (not just Functional Area + Layer)
-  const summaryHasTitle = (summary: string): boolean => {
-    const parts = summary.split(' | ');
-    // If 2 parts (Area | Layer), title is missing
-    if (parts.length === 2) return false;
-    // If 3 parts, third part (Title) must not be empty
-    if (parts.length === 3 && !parts[2].trim()) return false;
-    // 1 part = just a title (valid), or 3 parts with non-empty title (valid)
-    return summary.trim().length > 0;
-  };
-
   const isStep1Valid = () => draft ? summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0 : false;
   const isStep2Valid = () => draft ? draft.steps.every(s => s.action.trim() && s.result.trim()) : false;
 
@@ -291,7 +276,6 @@ export function EditTestCase() {
     try {
       const savedDraft = await draftsApi.update(draft.id, { ...draft, status: 'draft', projectKey: activeProject || '' });
       setDraft(savedDraft.draft);
-      setOriginalDraft(savedDraft.draft);
       setHasChanges(false);
       await refreshDrafts();
     } catch (err) {
@@ -348,12 +332,6 @@ export function EditTestCase() {
     if (result.success && result.testKey && result.testIssueId) {
       // Update local state with imported info
       setDraft({
-        ...draft,
-        status: 'imported',
-        testKey: result.testKey,
-        testIssueId: result.testIssueId,
-      });
-      setOriginalDraft({
         ...draft,
         status: 'imported',
         testKey: result.testKey,
