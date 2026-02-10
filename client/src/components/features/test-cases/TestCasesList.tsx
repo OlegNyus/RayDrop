@@ -300,8 +300,10 @@ export function TestCasesList() {
       }));
 
       try {
-        // Import single draft
-        const result = await xrayApi.import([draft.id], draft.projectKey);
+        // Import or update depending on whether it's a reusable TC
+        const result = draft.isReusable
+          ? await xrayApi.updateTest(draft.id)
+          : await xrayApi.import([draft.id], draft.projectKey);
         const testKey = result.testKeys?.[0];
         const testIssueId = result.testIssueIds?.[0];
 
