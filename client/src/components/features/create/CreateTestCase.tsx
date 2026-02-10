@@ -5,6 +5,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, StatusBadge, ImportProgressModal } from '../../ui';
 import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
+import { safeString } from '../../../types';
 import type { Draft, TestStep, ProjectSettings, TestDetails, TestLinks } from '../../../types';
 import {
   type Step,
@@ -145,7 +146,7 @@ export function CreateTestCase() {
     return summary.trim().length > 0;
   };
 
-  const isStep1Valid = () => summaryHasTitle(draft.summary) && (typeof draft.description === 'string' ? draft.description : '').trim().length > 0;
+  const isStep1Valid = () => summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0;
   const isStep2Valid = () => draft.steps.every(s => s.action.trim() && s.result.trim());
 
   // Can import/mark ready only if all steps are valid
@@ -154,7 +155,7 @@ export function CreateTestCase() {
   // Can save draft if at least ONE required field has content
   const canSaveDraft = () => {
     const hasSummary = draft.summary.trim().length > 0;
-    const hasDescription = (typeof draft.description === 'string' ? draft.description : '').trim().length > 0;
+    const hasDescription = safeString(draft.description).trim().length > 0;
     const hasStepContent = draft.steps.some(s => s.action.trim().length > 0 || s.result.trim().length > 0);
     return hasSummary || hasDescription || hasStepContent;
   };
@@ -171,7 +172,7 @@ export function CreateTestCase() {
     } else if (!summaryHasTitle(draft.summary)) {
       newErrors.summary = 'Title is required';
     }
-    if (!(typeof draft.description === 'string' ? draft.description : '').trim()) newErrors.description = 'Description is required';
+    if (!safeString(draft.description).trim()) newErrors.description = 'Description is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -318,7 +319,7 @@ export function CreateTestCase() {
     setDraft(d => ({
       ...d,
       summary: test.summary,
-      description: typeof test.description === 'string' ? test.description : '',
+      description: safeString(test.description),
       testType: (test.testType === 'Manual' || test.testType === 'Automated') ? test.testType : 'Manual',
       priority: test.priority || 'Medium',
       labels: test.labels || [],

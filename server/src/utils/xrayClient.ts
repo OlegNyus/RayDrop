@@ -1476,7 +1476,8 @@ export async function getTestsByPrefix(projectKey: string, prefix: string): Prom
     };
   }
 
-  const jql = `project = '${projectKey}' AND issuetype = Test AND summary ~ '${prefix}*'`;
+  const sanitizedPrefix = prefix.replace(/'/g, "\\'");
+  const jql = `project = '${projectKey}' AND issuetype = Test AND summary ~ '${sanitizedPrefix}*'`;
 
   const data = await executeGraphQL<Result>(query, {
     jql,

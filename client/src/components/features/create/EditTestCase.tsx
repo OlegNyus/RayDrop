@@ -5,6 +5,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, Card, StatusBadge, ConfirmModal, ImportProgressModal } from '../../ui';
 import { draftsApi, settingsApi, xrayApi } from '../../../services/api';
+import { safeString } from '../../../types';
 import type { Draft, TestStep, ProjectSettings, TestLinks } from '../../../types';
 import {
   type Step,
@@ -223,7 +224,7 @@ export function EditTestCase() {
     return summary.trim().length > 0;
   };
 
-  const isStep1Valid = () => draft ? summaryHasTitle(draft.summary) && (typeof draft.description === 'string' ? draft.description : '').trim().length > 0 : false;
+  const isStep1Valid = () => draft ? summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0 : false;
   const isStep2Valid = () => draft ? draft.steps.every(s => s.action.trim() && s.result.trim()) : false;
 
   // Can import/mark ready only if all steps are valid
@@ -233,7 +234,7 @@ export function EditTestCase() {
   const canSaveDraft = () => {
     if (!draft) return false;
     const hasSummary = draft.summary.trim().length > 0;
-    const hasDescription = (typeof draft.description === 'string' ? draft.description : '').trim().length > 0;
+    const hasDescription = safeString(draft.description).trim().length > 0;
     const hasStepContent = draft.steps.some(s => s.action.trim().length > 0 || s.result.trim().length > 0);
     return hasSummary || hasDescription || hasStepContent;
   };
@@ -252,7 +253,7 @@ export function EditTestCase() {
     } else if (!summaryHasTitle(draft.summary)) {
       newErrors.summary = 'Title is required';
     }
-    if (!(typeof draft.description === 'string' ? draft.description : '').trim()) newErrors.description = 'Description is required';
+    if (!safeString(draft.description).trim()) newErrors.description = 'Description is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };

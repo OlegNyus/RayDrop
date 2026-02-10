@@ -1,3 +1,8 @@
+// Helpers
+
+/** Safely convert a value to string — handles ADF objects, null, undefined */
+export const safeString = (val: unknown): string => typeof val === 'string' ? val : '';
+
 // Config Types
 export interface Config {
   configured: boolean;
