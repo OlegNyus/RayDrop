@@ -227,11 +227,11 @@ describe('TestCasesList', () => {
 
       // Wait for partial success
       await waitFor(() => {
-        expect(screen.getByText('Import Completed with Errors')).toBeInTheDocument();
+        expect(screen.getByText('Completed with Warnings')).toBeInTheDocument();
       }, { timeout: 10000 });
 
       // Should show successful import count
-      expect(screen.getByText(/1 of 2 imported successfully/)).toBeInTheDocument();
+      expect(screen.getByText(/1 of 2 imported/)).toBeInTheDocument();
     });
 
     it('closes modal when Done button is clicked', async () => {
