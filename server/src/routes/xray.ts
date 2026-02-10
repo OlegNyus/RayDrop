@@ -26,6 +26,8 @@ import {
   getPreconditionDetails,
   getTestExecutionStatusSummary,
   getTestsByStatus,
+  getTestsByPrefix,
+  updateExistingTest,
 } from '../utils/xrayClient.js';
 import { readDraft, writeDraft } from '../utils/fileOperations.js';
 import type { Draft } from '../types.js';
@@ -96,6 +98,60 @@ router.post('/import', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error importing to Xray:', error);
     return res.status(500).json({ error: 'Failed to import to Xray' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/update:
+ *   post:
+ *     summary: Update an existing test case in Xray
+ *     tags: [Xray]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [draftId]
+ *             properties:
+ *               draftId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Update result
+ */
+router.post('/update', async (req: Request, res: Response) => {
+  try {
+    const { draftId } = req.body;
+
+    if (!draftId) {
+      return res.status(400).json({ error: 'draftId is required' });
+    }
+
+    const draft = readDraft(draftId);
+    if (!draft) {
+      return res.status(404).json({ error: 'Draft not found' });
+    }
+
+    if (!draft.isReusable || !draft.sourceTestKey || !draft.sourceTestIssueId) {
+      return res.status(400).json({ error: 'Draft is not a reusable test case or missing source test info' });
+    }
+
+    const result = await updateExistingTest(draft);
+
+    if (result.success) {
+      draft.status = 'imported';
+      draft.testKey = draft.sourceTestKey;
+      draft.testIssueId = draft.sourceTestIssueId;
+      draft.updatedAt = Date.now();
+      writeDraft(draft.id, draft);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error updating test in Xray:', error);
+    return res.status(500).json({ error: 'Failed to update test in Xray' });
   }
 });
 
@@ -512,6 +568,45 @@ router.get('/test-execution/:issueId/status', async (req: Request, res: Response
   } catch (error) {
     console.error('Error fetching test execution status:', error);
     return res.status(500).json({ error: 'Failed to fetch test execution status' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/xray/tests/by-prefix/{projectKey}:
+ *   get:
+ *     summary: Get tests by summary prefix
+ *     tags: [Xray]
+ *     parameters:
+ *       - in: path
+ *         name: projectKey
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: prefix
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Summary prefix to search for (e.g., "REUSE")
+ *     responses:
+ *       200:
+ *         description: List of tests matching the prefix
+ */
+router.get('/tests/by-prefix/:projectKey', async (req: Request, res: Response) => {
+  try {
+    const { projectKey } = req.params;
+    const prefix = req.query.prefix as string;
+
+    if (!prefix) {
+      return res.status(400).json({ error: 'prefix query parameter is required' });
+    }
+
+    const tests = await getTestsByPrefix(projectKey, prefix);
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests by prefix:', error);
+    return res.status(500).json({ error: 'Failed to fetch tests by prefix' });
   }
 });
 

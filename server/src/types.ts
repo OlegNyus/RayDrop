@@ -27,6 +27,7 @@ export interface ProjectSettings {
   labels: string[];
   collections: Collection[];
   color: string;
+  reusablePrefix: string;
 }
 
 export interface Collection {
@@ -81,6 +82,9 @@ export interface Draft {
   projectKey: string;
   testKey?: string;
   testIssueId?: string;
+  isReusable?: boolean;
+  sourceTestKey?: string;
+  sourceTestIssueId?: string;
 }
 
 // ============ Xray Types ============

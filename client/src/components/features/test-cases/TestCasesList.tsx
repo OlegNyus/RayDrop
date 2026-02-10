@@ -90,7 +90,7 @@ export function TestCasesList() {
       const lower = search.toLowerCase();
       result = result.filter(d =>
         d.summary.toLowerCase().includes(lower) ||
-        d.description.toLowerCase().includes(lower)
+        (typeof d.description === 'string' ? d.description : '').toLowerCase().includes(lower)
       );
     }
 
@@ -199,7 +199,7 @@ export function TestCasesList() {
   const isTestCaseComplete = (draft: Draft): boolean => {
     // Check required basic fields
     if (!draft.summary.trim()) return false;
-    if (!draft.description.trim()) return false;
+    if (!(typeof draft.description === 'string' ? draft.description : '').trim()) return false;
 
     // Check that there's at least one step
     if (draft.steps.length === 0) return false;
@@ -635,7 +635,7 @@ function TestCaseRow({
             {draft.testKey && <TestKeyLink testKey={draft.testKey} />}
           </div>
           <p className="text-sm text-text-muted truncate mt-1">
-            {draft.description || 'No description'}
+            {(typeof draft.description === 'string' ? draft.description : '') || 'No description'}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">

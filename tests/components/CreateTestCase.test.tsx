@@ -53,9 +53,24 @@ function renderCreateTestCase() {
   );
 }
 
+// Helper to skip the choice screen by clicking "From Scratch"
+async function skipChoiceScreen() {
+  await waitFor(() => {
+    expect(screen.getByText('From Scratch')).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByText('From Scratch'));
+  // Wait for the editor to appear
+  await waitFor(() => {
+    expect(screen.getByText('Next →')).toBeInTheDocument();
+  });
+}
+
 // Helper to navigate to step 3 (Xray Linking) using Next buttons
 // Note: Direct step navigation requires validation, but Next allows free navigation
 async function navigateToStep3() {
+  // First skip the choice screen
+  await skipChoiceScreen();
+
   // Click Next from step 1 to step 2
   const nextButton1 = screen.getByText('Next →');
   fireEvent.click(nextButton1);
@@ -296,7 +311,7 @@ describe('CreateTestCase', () => {
   });
 
   describe('Page Rendering', () => {
-    it('renders create test case page with step indicator', async () => {
+    it('renders choice screen first with two options', async () => {
       server.use(
         http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json([])),
         http.get('*/api/xray/test-executions/:projectKey', () => HttpResponse.json([])),
@@ -310,13 +325,12 @@ describe('CreateTestCase', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Create Test Case')).toBeInTheDocument();
-        expect(screen.getByText('Basic Info')).toBeInTheDocument();
-        expect(screen.getByText('Test Steps')).toBeInTheDocument();
-        expect(screen.getByText('Xray Linking')).toBeInTheDocument();
+        expect(screen.getByText('From Scratch')).toBeInTheDocument();
+        expect(screen.getByText('From Reusable TC')).toBeInTheDocument();
       });
     });
 
-    it('shows New status badge', async () => {
+    it('renders step indicator after choosing From Scratch', async () => {
       server.use(
         http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json([])),
         http.get('*/api/xray/test-executions/:projectKey', () => HttpResponse.json([])),
@@ -328,8 +342,184 @@ describe('CreateTestCase', () => {
 
       renderCreateTestCase();
 
+      await skipChoiceScreen();
+
+      await waitFor(() => {
+        expect(screen.getByText('Basic Info')).toBeInTheDocument();
+        expect(screen.getByText('Test Steps')).toBeInTheDocument();
+        expect(screen.getByText('Xray Linking')).toBeInTheDocument();
+      });
+    });
+
+    it('shows New status badge after choosing From Scratch', async () => {
+      server.use(
+        http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json([])),
+        http.get('*/api/xray/test-executions/:projectKey', () => HttpResponse.json([])),
+        http.get('*/api/xray/test-sets/:projectKey', () => HttpResponse.json([])),
+        http.get('*/api/xray/preconditions/:projectKey', () => HttpResponse.json([])),
+        http.get('*/api/xray/project-id/:projectKey', () => HttpResponse.json({ projectId: 'proj-123' })),
+        http.get('*/api/xray/folders/:projectId', () => HttpResponse.json({ folders: [] })),
+      );
+
+      renderCreateTestCase();
+
+      await skipChoiceScreen();
+
       await waitFor(() => {
         expect(screen.getByText('New')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('TC-Create-U001: Reusable TC with ADF description', () => {
+    const adfDescription = {
+      type: 'doc',
+      version: 1,
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'ADF paragraph text' }],
+        },
+      ],
+    };
+
+    const mockReusableTests = [
+      {
+        issueId: '99001',
+        key: 'WCP-9999',
+        summary: 'Organization | UI | REUSE Login Test',
+        description: adfDescription,
+        testType: 'Manual',
+        priority: 'High',
+        labels: ['Regression'],
+        steps: [
+          { id: 'step-1', action: 'Open login page', data: '', result: 'Login page is displayed' },
+        ],
+      },
+    ];
+
+    beforeEach(() => {
+      server.use(
+        http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json(mockTestPlans)),
+        http.get('*/api/xray/test-executions/:projectKey', () => HttpResponse.json(mockTestExecutions)),
+        http.get('*/api/xray/test-sets/:projectKey', () => HttpResponse.json(mockTestSets)),
+        http.get('*/api/xray/preconditions/:projectKey', () => HttpResponse.json(mockPreconditions)),
+        http.get('*/api/xray/project-id/:projectKey', () => HttpResponse.json({ projectId: 'proj-123' })),
+        http.get('*/api/xray/folders/:projectId', () => HttpResponse.json(mockFolders)),
+        http.get('*/api/settings/projects/:projectKey', () => {
+          return HttpResponse.json({
+            color: '#3B82F6',
+            functionalAreas: ['UI', 'API'],
+            reusablePrefix: 'REUSE',
+          });
+        }),
+        http.get('*/api/xray/tests/by-prefix/:projectKey', () => {
+          return HttpResponse.json(mockReusableTests);
+        }),
+      );
+    });
+
+    it('does not crash when selecting a reusable TC with ADF object description', async () => {
+      const user = userEvent.setup();
+      renderCreateTestCase();
+
+      // Wait for choice screen
+      await waitFor(() => {
+        expect(screen.getByText('From Reusable TC')).toBeInTheDocument();
+      });
+
+      // Click "From Reusable TC"
+      fireEvent.click(screen.getByText('From Reusable TC'));
+
+      // Wait for selector to load tests
+      await waitFor(() => {
+        expect(screen.getByText('WCP-9999')).toBeInTheDocument();
+      });
+
+      // Click on the reusable test
+      await user.click(screen.getByText(/REUSE Login Test/));
+
+      // Should navigate to editor without crash — verify step indicator renders
+      await waitFor(() => {
+        expect(screen.getByText('Basic Info')).toBeInTheDocument();
+        expect(screen.getByText('Test Steps')).toBeInTheDocument();
+      });
+    });
+
+    it('does not crash when selecting a reusable TC with null description', async () => {
+      const user = userEvent.setup();
+
+      // Override to return null description
+      server.use(
+        http.get('*/api/xray/tests/by-prefix/:projectKey', () => {
+          return HttpResponse.json([
+            {
+              ...mockReusableTests[0],
+              description: null,
+            },
+          ]);
+        }),
+      );
+
+      renderCreateTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('From Reusable TC')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('From Reusable TC'));
+
+      await waitFor(() => {
+        expect(screen.getByText('WCP-9999')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(/REUSE Login Test/));
+
+      // Should navigate to editor without crash
+      await waitFor(() => {
+        expect(screen.getByText('Basic Info')).toBeInTheDocument();
+      });
+    });
+
+    it('does not crash when selecting a reusable TC with undefined description', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/xray/tests/by-prefix/:projectKey', () => {
+          return HttpResponse.json([
+            {
+              issueId: '99001',
+              key: 'WCP-9999',
+              summary: 'Organization | UI | REUSE Login Test',
+              // description omitted entirely
+              testType: 'Manual',
+              priority: 'High',
+              labels: [],
+              steps: [
+                { id: 'step-1', action: 'Open page', data: '', result: 'Page displayed' },
+              ],
+            },
+          ]);
+        }),
+      );
+
+      renderCreateTestCase();
+
+      await waitFor(() => {
+        expect(screen.getByText('From Reusable TC')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('From Reusable TC'));
+
+      await waitFor(() => {
+        expect(screen.getByText('WCP-9999')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(/REUSE Login Test/));
+
+      // Should navigate to editor without crash
+      await waitFor(() => {
+        expect(screen.getByText('Basic Info')).toBeInTheDocument();
       });
     });
   });

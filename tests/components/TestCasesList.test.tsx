@@ -461,4 +461,184 @@ describe('TestCasesList', () => {
       });
     });
   });
+
+  describe('TC-TCList-U001: Non-string description handling', () => {
+    it('renders without crashing when draft has ADF object description', async () => {
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'adf-1',
+              summary: 'Test with ADF description',
+              description: {
+                type: 'doc',
+                version: 1,
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: 'ADF paragraph' }],
+                  },
+                ],
+              },
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [{ id: 's1', action: 'Step action', result: 'Step result', data: '' }],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Test with ADF description')).toBeInTheDocument();
+      });
+    });
+
+    it('renders without crashing when draft has null description', async () => {
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'null-desc-1',
+              summary: 'Test with null description',
+              description: null,
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [{ id: 's1', action: 'Step action', result: 'Step result', data: '' }],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Test with null description')).toBeInTheDocument();
+      });
+    });
+
+    it('search filters work with non-string description drafts', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'adf-search-1',
+              summary: 'Searchable TC',
+              description: { type: 'doc', version: 1, content: [] },
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Searchable TC')).toBeInTheDocument();
+      });
+
+      // Type in search — should not crash
+      const searchInput = screen.getByPlaceholderText('Search test cases...');
+      await user.type(searchInput, 'Searchable');
+
+      await waitFor(() => {
+        expect(screen.getByText('Searchable TC')).toBeInTheDocument();
+      });
+    });
+
+    it('isTestCaseComplete handles non-string description as incomplete', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'adf-complete-1',
+              summary: 'ADF Draft',
+              description: { type: 'doc', version: 1, content: [] },
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [{ id: 's1', action: 'Step', result: 'Result', data: '' }],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('ADF Draft')).toBeInTheDocument();
+      });
+
+      // Select the draft
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      // "Mark as Ready" should appear but show missing fields since description is not a string
+      await waitFor(() => {
+        expect(screen.getByText(/Missing Required Fields/)).toBeInTheDocument();
+      });
+    });
+  });
 });
