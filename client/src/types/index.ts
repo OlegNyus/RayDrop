@@ -1,3 +1,8 @@
+// Helpers
+
+/** Safely convert a value to string — handles ADF objects, null, undefined */
+export const safeString = (val: unknown): string => typeof val === 'string' ? val : '';
+
 // Config Types
 export interface Config {
   configured: boolean;
@@ -24,6 +29,7 @@ export interface ProjectSettings {
   labels: string[];
   collections: Collection[];
   color: string;
+  reusablePrefix: string;
 }
 
 export interface Collection {
@@ -77,6 +83,9 @@ export interface Draft {
   projectKey: string;
   testKey?: string;
   testIssueId?: string;
+  isReusable?: boolean;
+  sourceTestKey?: string;
+  sourceTestIssueId?: string;
 }
 
 // Xray Types
@@ -116,6 +125,29 @@ export interface ImportResult {
   testIssueIds?: string[];
   testKeys?: string[];
   error?: string;
+}
+
+// Test with full details (steps, description, etc.)
+export interface TestDetails {
+  issueId: string;
+  key: string;
+  summary: string;
+  description: string;
+  testType: string;
+  priority: string;
+  labels: string[];
+  steps: Array<{ id: string; action: string; data: string; result: string }>;
+}
+
+// Test with Xray linking data (for reusable TC pre-population)
+export interface TestLinks {
+  issueId: string;
+  key: string;
+  testPlans: Array<{ issueId: string; key: string; summary: string }>;
+  testExecutions: Array<{ issueId: string; key: string; summary: string }>;
+  testSets: Array<{ issueId: string; key: string; summary: string }>;
+  preconditions: Array<{ issueId: string; key: string; summary: string }>;
+  folder?: string;
 }
 
 // Test with detailed Jira fields (for TC Review page)

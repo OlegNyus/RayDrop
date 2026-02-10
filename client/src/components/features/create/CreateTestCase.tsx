@@ -5,7 +5,8 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, StatusBadge, ImportProgressModal } from '../../ui';
 import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
-import type { Draft, TestStep, ProjectSettings } from '../../../types';
+import { safeString } from '../../../types';
+import type { Draft, TestStep, ProjectSettings, TestDetails, TestLinks } from '../../../types';
 import {
   type Step,
   type XrayCache,
@@ -17,7 +18,10 @@ import {
   createEmptyDraft,
   useStepSensors,
 } from './TestCaseFormComponents';
+import { ReusableTCSelector } from './ReusableTCSelector';
 import { useImportToXray } from '../../../hooks/useImportToXray';
+
+type CreateMode = 'choice' | 'scratch' | 'reusable';
 
 export function CreateTestCase() {
   const navigate = useNavigate();
@@ -27,6 +31,7 @@ export function CreateTestCase() {
   // Import hook
   const { importProgress, importing, startImport, executeImport, closeModal } = useImportToXray();
 
+  const [mode, setMode] = useState<CreateMode>('choice');
   const [draft, setDraft] = useState<Draft>(() => createEmptyDraft(activeProject || ''));
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [hasChanges, setHasChanges] = useState(false);
@@ -141,7 +146,7 @@ export function CreateTestCase() {
     return summary.trim().length > 0;
   };
 
-  const isStep1Valid = () => summaryHasTitle(draft.summary) && draft.description.trim().length > 0;
+  const isStep1Valid = () => summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0;
   const isStep2Valid = () => draft.steps.every(s => s.action.trim() && s.result.trim());
 
   // Can import/mark ready only if all steps are valid
@@ -150,7 +155,7 @@ export function CreateTestCase() {
   // Can save draft if at least ONE required field has content
   const canSaveDraft = () => {
     const hasSummary = draft.summary.trim().length > 0;
-    const hasDescription = draft.description.trim().length > 0;
+    const hasDescription = safeString(draft.description).trim().length > 0;
     const hasStepContent = draft.steps.some(s => s.action.trim().length > 0 || s.result.trim().length > 0);
     return hasSummary || hasDescription || hasStepContent;
   };
@@ -167,7 +172,7 @@ export function CreateTestCase() {
     } else if (!summaryHasTitle(draft.summary)) {
       newErrors.summary = 'Title is required';
     }
-    if (!draft.description.trim()) newErrors.description = 'Description is required';
+    if (!safeString(draft.description).trim()) newErrors.description = 'Description is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -271,8 +276,8 @@ export function CreateTestCase() {
       }
 
       // Start import with progress tracking
-      startImport(draft.xrayLinking);
-      const result = await executeImport(draftId, activeProject, draft.xrayLinking);
+      startImport(draft.xrayLinking, draft.isReusable);
+      const result = await executeImport(draftId, activeProject, draft.xrayLinking, draft.isReusable);
 
       if (result.success && result.testKey && result.testIssueId) {
         // Update local state with imported info
@@ -294,6 +299,52 @@ export function CreateTestCase() {
     }
   };
 
+  const handleSelectReusableTC = async (test: TestDetails) => {
+    // Pre-fill draft with all TC fields
+    const steps = test.steps.length > 0
+      ? test.steps.map(s => ({ ...s, id: crypto.randomUUID() }))
+      : [createEmptyStep()];
+
+    // Fetch existing Xray links for this test
+    let links: TestLinks | null = null;
+    try {
+      links = await xrayApi.getTestLinks(test.issueId);
+    } catch (err) {
+      console.error('Failed to fetch test links:', err);
+    }
+
+    const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
+      items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
+
+    setDraft(d => ({
+      ...d,
+      summary: test.summary,
+      description: safeString(test.description),
+      testType: (test.testType === 'Manual' || test.testType === 'Automated') ? test.testType : 'Manual',
+      priority: test.priority || 'Medium',
+      labels: test.labels || [],
+      steps,
+      isReusable: true,
+      sourceTestKey: test.key,
+      sourceTestIssueId: test.issueId,
+      xrayLinking: links ? {
+        ...d.xrayLinking,
+        testPlanIds: links.testPlans.map(t => t.issueId),
+        testPlanDisplays: mapDisplays(links.testPlans),
+        testExecutionIds: links.testExecutions.map(t => t.issueId),
+        testExecutionDisplays: mapDisplays(links.testExecutions),
+        testSetIds: links.testSets.map(t => t.issueId),
+        testSetDisplays: mapDisplays(links.testSets),
+        preconditionIds: links.preconditions.map(t => t.issueId),
+        preconditionDisplays: mapDisplays(links.preconditions),
+        folderPath: links.folder || d.xrayLinking.folderPath,
+      } : d.xrayLinking,
+      updatedAt: Date.now(),
+    }));
+    setMode('scratch');
+    setHasChanges(true);
+  };
+
   const resetForm = () => {
     if (hasChanges && !confirm('You have unsaved changes. Are you sure you want to reset?')) return;
     setDraft(createEmptyDraft(activeProject || ''));
@@ -302,14 +353,83 @@ export function CreateTestCase() {
     setHasChanges(false);
     setErrors({});
     setShowXrayValidation(false);
+    setMode('choice');
   };
 
+  // Choice screen
+  if (mode === 'choice') {
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
+        <h1 className="text-2xl font-bold text-text-primary">Create Test Case</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button
+            onClick={() => setMode('scratch')}
+            className="text-left p-6 rounded-xl bg-card border border-border hover:border-accent/50 hover:bg-accent/5 transition-all group"
+          >
+            <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mb-4 group-hover:bg-accent/20 transition-colors">
+              <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-text-primary mb-1">From Scratch</h3>
+            <p className="text-sm text-text-muted">Create a new test case with a blank template</p>
+          </button>
+
+          <button
+            onClick={() => setMode('reusable')}
+            className="text-left p-6 rounded-xl bg-card border border-border hover:border-accent/50 hover:bg-accent/5 transition-all group"
+          >
+            <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mb-4 group-hover:bg-accent/20 transition-colors">
+              <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-text-primary mb-1">From Reusable TC</h3>
+            <p className="text-sm text-text-muted">Edit and update an existing test case from Xray</p>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Reusable TC selector screen
+  if (mode === 'reusable') {
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setMode('choice')}
+            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-sidebar-hover transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-2xl font-bold text-text-primary">Create Test Case</h1>
+        </div>
+        {activeProject && (
+          <ReusableTCSelector
+            projectKey={activeProject}
+            onSelect={handleSelectReusableTC}
+            onSwitchToScratch={() => setMode('scratch')}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Editor (scratch or post-reusable-selection)
   return (
     <div className="space-y-6 max-w-4xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-text-primary">Create Test Case</h1>
           <StatusBadge status={draft.status} />
+          {draft.isReusable && draft.sourceTestKey && (
+            <span className="px-2 py-0.5 text-xs font-mono bg-accent/10 text-accent rounded">
+              Editing {draft.sourceTestKey}
+            </span>
+          )}
           {hasChanges && <span className="text-sm text-warning">• Unsaved</span>}
         </div>
       </div>
@@ -340,7 +460,7 @@ export function CreateTestCase() {
       {importSuccess && (
         <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm flex items-center gap-2">
           <span className="text-green-500">✓</span>
-          Successfully imported as <strong>{importSuccess.testKey}</strong>
+          Successfully {draft.isReusable ? 'updated' : 'imported as'} <strong>{importSuccess.testKey}</strong>
         </div>
       )}
 
@@ -390,7 +510,7 @@ export function CreateTestCase() {
             <Button onClick={nextStep} disabled={importing}>Next →</Button>
           ) : draft.status === 'imported' ? (
             <Button disabled>
-              ✓ Imported as {draft.testKey}
+              ✓ {draft.isReusable ? 'Updated' : 'Imported as'} {draft.testKey}
             </Button>
           ) : (
             <>
@@ -398,7 +518,9 @@ export function CreateTestCase() {
                 {saving ? 'Saving...' : 'Save & Mark Ready'}
               </Button>
               <Button onClick={handleImportToXray} disabled={saving || importing || !canImport()}>
-                {importing ? 'Importing...' : 'Import to Xray'}
+                {importing
+                  ? (draft.isReusable ? 'Updating...' : 'Importing...')
+                  : (draft.isReusable ? 'Update in Xray' : 'Import to Xray')}
               </Button>
             </>
           )}

@@ -1,4 +1,4 @@
-import type { Config, ConfigInput, Settings, ProjectSettings, Draft, XrayEntity, ImportResult, TestWithDetails } from '../types';
+import type { Config, ConfigInput, Settings, ProjectSettings, Draft, XrayEntity, ImportResult, TestWithDetails, TestDetails, TestLinks } from '../types';
 
 const API_BASE = '/api';
 
@@ -228,6 +228,21 @@ export const xrayApi = {
   // Get tests by Jira workflow status (for TC Review)
   getTestsByStatus: (projectKey: string, status: string) =>
     request<TestWithDetails[]>(`/xray/tests/by-status/${projectKey}?status=${encodeURIComponent(status)}`),
+
+  // Get tests by summary prefix (for Reusable TCs)
+  getTestsByPrefix: (projectKey: string, prefix: string) =>
+    request<TestDetails[]>(`/xray/tests/by-prefix/${projectKey}?prefix=${encodeURIComponent(prefix)}`),
+
+  // Get a test's linked entities (test plans, executions, sets, preconditions, folder)
+  getTestLinks: (issueId: string) =>
+    request<TestLinks>(`/xray/tests/${issueId}/links`),
+
+  // Update an existing test in Xray (for Reusable TCs)
+  updateTest: (draftId: string) =>
+    request<ImportResult>('/xray/update', {
+      method: 'POST',
+      body: JSON.stringify({ draftId }),
+    }),
 
   // Helper to get all folders - flattens nested structure from single API call
   // Returns both folders and projectId (needed for folder linking)

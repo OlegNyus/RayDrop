@@ -166,6 +166,7 @@ export function getProjectSettings(projectKey: string): ProjectSettings {
     labels: [],
     collections: [],
     color: '',
+    reusablePrefix: 'REUSE',
   };
 }
 
@@ -206,6 +207,7 @@ export function addProject(projectKey: string, color?: string): { success: boole
     labels: [],
     collections: [],
     color: assignedColor,
+    reusablePrefix: 'REUSE',
   };
 
   if (!settings.activeProject) {

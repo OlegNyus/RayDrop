@@ -10,6 +10,32 @@ const XRAY_GRAPHQL_URL = 'https://xray.cloud.getxray.app/api/v2/graphql';
 const TOKEN_EXPIRY_HOURS = 24;
 const TOKEN_REFRESH_BUFFER_MINUTES = 30;
 
+// Jira description can be a string or ADF (Atlassian Document Format) object.
+// Extract plain text from either format.
+export function extractDescription(desc: unknown): string {
+  if (!desc) return '';
+  if (typeof desc === 'string') return desc;
+  // ADF object: recursively extract text from content nodes
+  if (typeof desc === 'object' && desc !== null) {
+    const extractText = (node: Record<string, unknown>): string => {
+      if (node.type === 'text' && typeof node.text === 'string') return node.text;
+      if (Array.isArray(node.content)) {
+        return node.content.map((child: Record<string, unknown>) => extractText(child)).join('');
+      }
+      return '';
+    };
+    const lines: string[] = [];
+    const root = desc as Record<string, unknown>;
+    if (Array.isArray(root.content)) {
+      for (const block of root.content) {
+        lines.push(extractText(block as Record<string, unknown>));
+      }
+    }
+    return lines.join('\n').trim();
+  }
+  return String(desc);
+}
+
 interface TokenData {
   token: string;
   timestamp: number;
@@ -1056,7 +1082,7 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
     issueId: test.issueId,
     key: test.jira?.key || '',
     summary: test.jira?.summary || '',
-    description: test.jira?.description || '',
+    description: extractDescription(test.jira?.description),
     testType: test.testType?.name || 'Manual',
     priority: test.jira?.priority?.name || '',
     labels: test.jira?.labels || [],
@@ -1074,10 +1100,10 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
 export interface TestLinks {
   issueId: string;
   key: string;
-  testPlans: Array<{ issueId: string; key: string }>;
-  testExecutions: Array<{ issueId: string; key: string }>;
-  testSets: Array<{ issueId: string; key: string }>;
-  preconditions: Array<{ issueId: string; key: string }>;
+  testPlans: Array<{ issueId: string; key: string; summary: string }>;
+  testExecutions: Array<{ issueId: string; key: string; summary: string }>;
+  testSets: Array<{ issueId: string; key: string; summary: string }>;
+  preconditions: Array<{ issueId: string; key: string; summary: string }>;
   folder?: string;
 }
 
@@ -1093,25 +1119,25 @@ export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
         testPlans(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
         testSets(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
         testExecutions(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
         preconditions(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
       }
@@ -1120,7 +1146,7 @@ export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
 
   interface LinkedEntity {
     issueId: string;
-    jira?: { key: string };
+    jira?: { key: string; summary: string };
   }
 
   interface Result {
@@ -1141,6 +1167,7 @@ export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
   const mapEntity = (e: LinkedEntity) => ({
     issueId: e.issueId,
     key: e.jira?.key || '',
+    summary: e.jira?.summary || '',
   });
 
   return {
@@ -1344,7 +1371,7 @@ export async function getPreconditionDetails(issueId: string): Promise<Precondit
     issueId: precondition.issueId,
     key: precondition.jira?.key || '',
     summary: precondition.jira?.summary || '',
-    description: precondition.jira?.description || '',
+    description: extractDescription(precondition.jira?.description),
     preconditionType: precondition.preconditionType?.name || 'Manual',
     definition: precondition.definition || '',
     priority: precondition.jira?.priority?.name || '',
@@ -1405,4 +1432,144 @@ export async function getTestsByStatus(projectKey: string, status: string): Prom
     created: t.jira?.created || '',
     updated: t.jira?.updated || '',
   }));
+}
+
+// ============ Get Tests by Summary Prefix ============
+
+export async function getTestsByPrefix(projectKey: string, prefix: string): Promise<TestDetails[]> {
+  const query = `
+    query GetTests($jql: String!, $limit: Int!) {
+      getTests(jql: $jql, limit: $limit) {
+        total
+        results {
+          issueId
+          testType {
+            name
+          }
+          steps {
+            id
+            action
+            data
+            result
+          }
+          jira(fields: ["key", "summary", "description", "priority", "labels"])
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTests: {
+      total: number;
+      results: Array<{
+        issueId: string;
+        testType?: { name: string };
+        steps?: Array<{ id: string; action: string; data: string; result: string }>;
+        jira?: {
+          key: string;
+          summary: string;
+          description: string;
+          priority?: { name: string };
+          labels?: string[];
+        };
+      }>;
+    };
+  }
+
+  const sanitizedPrefix = prefix.replace(/'/g, "\\'");
+  const jql = `project = '${projectKey}' AND issuetype = Test AND summary ~ '${sanitizedPrefix}*'`;
+
+  const data = await executeGraphQL<Result>(query, {
+    jql,
+    limit: 200,
+  });
+
+  return data.getTests.results.map((t) => ({
+    issueId: t.issueId,
+    key: t.jira?.key || '',
+    summary: t.jira?.summary || '',
+    description: extractDescription(t.jira?.description),
+    testType: t.testType?.name || 'Manual',
+    priority: t.jira?.priority?.name || 'Medium',
+    labels: t.jira?.labels || [],
+    steps: (t.steps || []).map((s) => ({
+      id: s.id,
+      action: s.action || '',
+      data: s.data || '',
+      result: s.result || '',
+    })),
+  }));
+}
+
+// ============ Update Existing Test ============
+
+export async function updateExistingTest(draft: Draft): Promise<ImportResult> {
+  if (!draft.sourceTestKey || !draft.sourceTestIssueId) {
+    return { success: false, error: 'Missing source test key or issue ID' };
+  }
+
+  try {
+    const config = readConfig();
+    if (!config) {
+      return { success: false, error: 'Config not found' };
+    }
+
+    const token = await getToken(config);
+    const projectKey = draft.projectKey;
+
+    // Use bulk import endpoint with the existing test key to trigger an update
+    const payload = [{
+      testtype: draft.testType || 'Manual',
+      fields: {
+        summary: draft.summary,
+        project: { key: projectKey },
+        description: draft.description || '',
+        labels: draft.labels || [],
+      },
+      update_key: draft.sourceTestKey,
+      steps: (draft.steps || []).map((step) => ({
+        action: step.action || '',
+        data: formatDataForXray(step.data || ''),
+        result: step.result || '',
+      })),
+    }];
+
+    const response = await axios.post(XRAY_IMPORT_URL, payload, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 60000,
+    });
+
+    if (response.data?.jobId) {
+      // Poll for job completion
+      const jobResult = await getJobStatus(response.data.jobId);
+
+      if (!jobResult.success) {
+        return {
+          success: false,
+          error: jobResult.error || 'Update job failed',
+        };
+      }
+
+      return {
+        success: true,
+        testIssueIds: [draft.sourceTestIssueId],
+        testKeys: [draft.sourceTestKey],
+      };
+    }
+
+    return {
+      success: false,
+      error: 'Update completed but no jobId returned',
+    };
+  } catch (error) {
+    const axiosError = error as { response?: { data?: { error?: string } }; message?: string };
+    const errorMsg = axiosError.response?.data?.error || axiosError.message;
+    return {
+      success: false,
+      error: `Update failed: ${errorMsg}`,
+    };
+  }
 }

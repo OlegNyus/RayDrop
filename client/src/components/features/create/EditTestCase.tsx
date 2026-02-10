@@ -4,8 +4,9 @@ import { arrayMove } from '@dnd-kit/sortable';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, Card, StatusBadge, ConfirmModal, ImportProgressModal } from '../../ui';
-import { draftsApi, settingsApi } from '../../../services/api';
-import type { Draft, TestStep, ProjectSettings } from '../../../types';
+import { draftsApi, settingsApi, xrayApi } from '../../../services/api';
+import { safeString } from '../../../types';
+import type { Draft, TestStep, ProjectSettings, TestLinks } from '../../../types';
 import {
   type Step,
   type XrayCache,
@@ -61,6 +62,38 @@ export function EditTestCase() {
         setLoading(true);
         setError(null);
         const fetchedDraft = await draftsApi.get(id);
+
+        // For reusable TCs with empty linking, fetch links from Xray
+        if (fetchedDraft.isReusable && fetchedDraft.sourceTestIssueId) {
+          const { xrayLinking } = fetchedDraft;
+          const hasLinks = xrayLinking.testPlanIds.length > 0 ||
+                           xrayLinking.testExecutionIds.length > 0 ||
+                           xrayLinking.testSetIds.length > 0 ||
+                           xrayLinking.preconditionIds.length > 0;
+          if (!hasLinks) {
+            try {
+              const links: TestLinks = await xrayApi.getTestLinks(fetchedDraft.sourceTestIssueId);
+              const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
+                items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
+
+              fetchedDraft.xrayLinking = {
+                ...fetchedDraft.xrayLinking,
+                testPlanIds: links.testPlans.map(t => t.issueId),
+                testPlanDisplays: mapDisplays(links.testPlans),
+                testExecutionIds: links.testExecutions.map(t => t.issueId),
+                testExecutionDisplays: mapDisplays(links.testExecutions),
+                testSetIds: links.testSets.map(t => t.issueId),
+                testSetDisplays: mapDisplays(links.testSets),
+                preconditionIds: links.preconditions.map(t => t.issueId),
+                preconditionDisplays: mapDisplays(links.preconditions),
+                folderPath: links.folder || fetchedDraft.xrayLinking.folderPath,
+              };
+            } catch (err) {
+              console.error('Failed to fetch test links for reusable TC:', err);
+            }
+          }
+        }
+
         setDraft(fetchedDraft);
         setOriginalDraft(fetchedDraft);
         setNotFound(false);
@@ -191,7 +224,7 @@ export function EditTestCase() {
     return summary.trim().length > 0;
   };
 
-  const isStep1Valid = () => draft ? summaryHasTitle(draft.summary) && draft.description.trim().length > 0 : false;
+  const isStep1Valid = () => draft ? summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0 : false;
   const isStep2Valid = () => draft ? draft.steps.every(s => s.action.trim() && s.result.trim()) : false;
 
   // Can import/mark ready only if all steps are valid
@@ -201,7 +234,7 @@ export function EditTestCase() {
   const canSaveDraft = () => {
     if (!draft) return false;
     const hasSummary = draft.summary.trim().length > 0;
-    const hasDescription = draft.description.trim().length > 0;
+    const hasDescription = safeString(draft.description).trim().length > 0;
     const hasStepContent = draft.steps.some(s => s.action.trim().length > 0 || s.result.trim().length > 0);
     return hasSummary || hasDescription || hasStepContent;
   };
@@ -220,7 +253,7 @@ export function EditTestCase() {
     } else if (!summaryHasTitle(draft.summary)) {
       newErrors.summary = 'Title is required';
     }
-    if (!draft.description.trim()) newErrors.description = 'Description is required';
+    if (!safeString(draft.description).trim()) newErrors.description = 'Description is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -309,8 +342,8 @@ export function EditTestCase() {
     });
 
     // Start import with progress tracking
-    startImport(draft.xrayLinking);
-    const result = await executeImport(draft.id, activeProject, draft.xrayLinking);
+    startImport(draft.xrayLinking, draft.isReusable);
+    const result = await executeImport(draft.id, activeProject, draft.xrayLinking, draft.isReusable);
 
     if (result.success && result.testKey && result.testIssueId) {
       // Update local state with imported info
@@ -400,6 +433,11 @@ export function EditTestCase() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-text-primary">Edit Test Case</h1>
           <StatusBadge status={draft.status} />
+          {draft.isReusable && draft.sourceTestKey && (
+            <span className="px-2 py-0.5 text-xs font-mono bg-accent/10 text-accent rounded">
+              Editing {draft.sourceTestKey}
+            </span>
+          )}
           {hasChanges && <span className="text-sm text-warning">• Unsaved</span>}
         </div>
         <button
@@ -439,7 +477,7 @@ export function EditTestCase() {
       {importSuccess && (
         <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm flex items-center gap-2">
           <span className="text-green-500">✓</span>
-          Successfully imported as <strong>{importSuccess.testKey}</strong>
+          Successfully {draft.isReusable ? 'updated' : 'imported as'} <strong>{importSuccess.testKey}</strong>
         </div>
       )}
 
@@ -500,7 +538,9 @@ export function EditTestCase() {
                 </Button>
               )}
               <Button onClick={handleImportToXray} disabled={saving || importing || !canImport()}>
-                {importing ? 'Importing...' : 'Import to Xray'}
+                {importing
+                  ? (draft.isReusable ? 'Updating...' : 'Importing...')
+                  : (draft.isReusable ? 'Update in Xray' : 'Import to Xray')}
               </Button>
             </>
           )}

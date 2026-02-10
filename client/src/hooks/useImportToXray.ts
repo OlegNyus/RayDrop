@@ -42,6 +42,7 @@ export interface ImportProgress {
   isComplete: boolean;
   hasErrors: boolean;
   validation: ValidationResult | null;
+  isReusable?: boolean;
 }
 
 export interface LinkingResult {
@@ -230,9 +231,9 @@ export function useImportToXray() {
   const [importing, setImporting] = useState(false);
 
   // Build the steps list for progress tracking
-  const buildProgressSteps = useCallback((xrayLinking: Draft['xrayLinking']): ImportStep[] => {
+  const buildProgressSteps = useCallback((xrayLinking: Draft['xrayLinking'], isReusable?: boolean): ImportStep[] => {
     const progressSteps: ImportStep[] = [
-      { id: 'create', label: 'Creating test in Jira...', status: 'pending' },
+      { id: 'create', label: isReusable ? 'Updating test in Jira...' : 'Creating test in Jira...', status: 'pending' },
     ];
 
     // Add test plan steps
@@ -303,12 +304,12 @@ export function useImportToXray() {
   }, []);
 
   // Start import with progress tracking
-  const startImport = useCallback((xrayLinking: Draft['xrayLinking']) => {
+  const startImport = useCallback((xrayLinking: Draft['xrayLinking'], isReusable?: boolean) => {
     setImporting(true);
     setImportProgress({
       isOpen: true,
       phase: 'importing',
-      steps: buildProgressSteps(xrayLinking),
+      steps: buildProgressSteps(xrayLinking, isReusable),
       currentStepIndex: 0,
       testKey: null,
       testIssueId: null,
@@ -317,6 +318,7 @@ export function useImportToXray() {
       isComplete: false,
       hasErrors: false,
       validation: null,
+      isReusable,
     });
   }, [buildProgressSteps]);
 
@@ -324,16 +326,19 @@ export function useImportToXray() {
   const executeImport = useCallback(async (
     draftId: string,
     projectKey: string,
-    xrayLinking: Draft['xrayLinking']
+    xrayLinking: Draft['xrayLinking'],
+    isReusable?: boolean
   ): Promise<ImportResult> => {
     try {
-      // Step: Create test in Jira
+      // Step: Create or update test in Jira
       updateStep('create', 'in-progress');
-      const importResult = await xrayApi.import([draftId], projectKey);
+      const importResult = isReusable
+        ? await xrayApi.updateTest(draftId)
+        : await xrayApi.import([draftId], projectKey);
 
       if (!importResult.success || !importResult.testIssueIds || !importResult.testKeys) {
-        updateStep('create', 'failed', importResult.error || 'Import failed');
-        throw new Error(importResult.error || 'Import failed');
+        updateStep('create', 'failed', importResult.error || (isReusable ? 'Update failed' : 'Import failed'));
+        throw new Error(importResult.error || (isReusable ? 'Update failed' : 'Import failed'));
       }
 
       const testIssueId = importResult.testIssueIds[0];

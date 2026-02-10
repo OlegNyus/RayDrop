@@ -5,6 +5,7 @@ import { Card, Button, StatusBadge, Input, TestKeyLink, ConfirmModal } from '../
 import { draftsApi, xrayApi } from '../../../services/api';
 import { executeLinking, countLinks } from '../../../hooks/useImportToXray';
 import type { LinkedItem, FailedItem, ValidationResult } from '../../../hooks/useImportToXray';
+import { safeString } from '../../../types';
 import type { Draft, TestCaseStatus } from '../../../types';
 
 type SortField = 'updatedAt' | 'summary' | 'status';
@@ -90,7 +91,7 @@ export function TestCasesList() {
       const lower = search.toLowerCase();
       result = result.filter(d =>
         d.summary.toLowerCase().includes(lower) ||
-        d.description.toLowerCase().includes(lower)
+        safeString(d.description).toLowerCase().includes(lower)
       );
     }
 
@@ -199,7 +200,7 @@ export function TestCasesList() {
   const isTestCaseComplete = (draft: Draft): boolean => {
     // Check required basic fields
     if (!draft.summary.trim()) return false;
-    if (!draft.description.trim()) return false;
+    if (!safeString(draft.description).trim()) return false;
 
     // Check that there's at least one step
     if (draft.steps.length === 0) return false;
@@ -300,8 +301,10 @@ export function TestCasesList() {
       }));
 
       try {
-        // Import single draft
-        const result = await xrayApi.import([draft.id], draft.projectKey);
+        // Import or update depending on whether it's a reusable TC
+        const result = draft.isReusable
+          ? await xrayApi.updateTest(draft.id)
+          : await xrayApi.import([draft.id], draft.projectKey);
         const testKey = result.testKeys?.[0];
         const testIssueId = result.testIssueIds?.[0];
 
@@ -635,7 +638,7 @@ function TestCaseRow({
             {draft.testKey && <TestKeyLink testKey={draft.testKey} />}
           </div>
           <p className="text-sm text-text-muted truncate mt-1">
-            {draft.description || 'No description'}
+            {safeString(draft.description) || 'No description'}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">

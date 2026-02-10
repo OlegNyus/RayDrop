@@ -461,4 +461,393 @@ describe('TestCasesList', () => {
       });
     });
   });
+
+  describe('TC-TCList-U002: Bulk import uses updateTest for reusable TCs', () => {
+    const reusableDraft = {
+      id: 'reusable-1',
+      summary: 'Live Map | UI | REUSE Login Test',
+      description: 'Reusable test description',
+      status: 'ready',
+      projectKey: 'TEST',
+      steps: [{ id: 's-r1', action: 'Open login', result: 'Login shown', data: '' }],
+      labels: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      isReusable: true,
+      sourceTestKey: 'TEST-500',
+      sourceTestIssueId: '50001',
+      xrayLinking: {
+        testPlanIds: [],
+        testPlanDisplays: [],
+        testExecutionIds: [],
+        testExecutionDisplays: [],
+        testSetIds: [],
+        testSetDisplays: [],
+        preconditionIds: [],
+        preconditionDisplays: [],
+        folderPath: '/',
+        projectId: '',
+      },
+    };
+
+    it('calls /xray/update for reusable TC instead of /xray/import', async () => {
+      const user = userEvent.setup();
+      const updateCalls: { draftId: string }[] = [];
+      const importCalls: { draftIds: string[] }[] = [];
+
+      server.use(
+        http.get('*/api/drafts', () => HttpResponse.json([reusableDraft])),
+        http.post('*/api/xray/update', async ({ request }) => {
+          const body = await request.json() as { draftId: string };
+          updateCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['50001'],
+            testKeys: ['TEST-500'],
+          });
+        }),
+        http.post('*/api/xray/import', async ({ request }) => {
+          const body = await request.json() as { draftIds: string[] };
+          importCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-123'],
+            testKeys: ['TEST-999'],
+          });
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Live Map | UI | REUSE Login Test')).toBeInTheDocument();
+      });
+
+      // Select the reusable test case
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      // Click import button
+      await waitFor(() => {
+        expect(screen.getByText(/Import 1 to Xray/)).toBeInTheDocument();
+      });
+      await user.click(screen.getByText(/Import 1 to Xray/));
+
+      // Wait for completion
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should have called /xray/update, NOT /xray/import
+      expect(updateCalls).toHaveLength(1);
+      expect(updateCalls[0].draftId).toBe('reusable-1');
+      expect(importCalls).toHaveLength(0);
+    });
+
+    it('calls /xray/import for non-reusable TC (not /xray/update)', async () => {
+      const user = userEvent.setup();
+      const updateCalls: { draftId: string }[] = [];
+      const importCalls: { draftIds: string[] }[] = [];
+
+      server.use(
+        http.post('*/api/xray/update', async ({ request }) => {
+          const body = await request.json() as { draftId: string };
+          updateCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-123'],
+            testKeys: ['TEST-999'],
+          });
+        }),
+        http.post('*/api/xray/import', async ({ request }) => {
+          const body = await request.json() as { draftIds: string[] };
+          importCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-123'],
+            testKeys: ['TEST-101'],
+          });
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Ready Test Case 1')).toBeInTheDocument();
+      });
+
+      // Select a non-reusable ready test case
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      await user.click(screen.getByText(/Import 1 to Xray/));
+
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      // Should have called /xray/import, NOT /xray/update
+      expect(importCalls).toHaveLength(1);
+      expect(updateCalls).toHaveLength(0);
+    });
+
+    it('uses correct endpoint for each TC in a mixed batch', async () => {
+      const user = userEvent.setup();
+      const updateCalls: { draftId: string }[] = [];
+      const importCalls: { draftIds: string[] }[] = [];
+
+      // List with both reusable and non-reusable ready drafts
+      server.use(
+        http.get('*/api/drafts', () => HttpResponse.json([
+          {
+            id: '1',
+            summary: 'Regular Ready TC',
+            description: 'Regular description',
+            status: 'ready',
+            projectKey: 'TEST',
+            steps: [{ id: 's1', action: 'Step', result: 'Result', data: '' }],
+            labels: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            xrayLinking: {
+              testPlanIds: [], testPlanDisplays: [],
+              testExecutionIds: [], testExecutionDisplays: [],
+              testSetIds: [], testSetDisplays: [],
+              preconditionIds: [], preconditionDisplays: [],
+              folderPath: '/', projectId: '',
+            },
+          },
+          reusableDraft,
+        ])),
+        http.post('*/api/xray/update', async ({ request }) => {
+          const body = await request.json() as { draftId: string };
+          updateCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['50001'],
+            testKeys: ['TEST-500'],
+          });
+        }),
+        http.post('*/api/xray/import', async ({ request }) => {
+          const body = await request.json() as { draftIds: string[] };
+          importCalls.push(body);
+          return HttpResponse.json({
+            success: true,
+            testIssueIds: ['new-123'],
+            testKeys: ['TEST-101'],
+          });
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Regular Ready TC')).toBeInTheDocument();
+        expect(screen.getByText('Live Map | UI | REUSE Login Test')).toBeInTheDocument();
+      });
+
+      // Select all via "Select All" checkbox
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[0]); // Select All
+
+      // Click import button — both are ready
+      await waitFor(() => {
+        expect(screen.getByText(/Import 2 to Xray/)).toBeInTheDocument();
+      });
+      await user.click(screen.getByText(/Import 2 to Xray/));
+
+      // Wait for completion
+      await waitFor(() => {
+        expect(screen.getByText('Import Complete!')).toBeInTheDocument();
+      }, { timeout: 10000 });
+
+      // Regular TC should use /xray/import
+      expect(importCalls).toHaveLength(1);
+      expect(importCalls[0].draftIds).toContain('1');
+
+      // Reusable TC should use /xray/update
+      expect(updateCalls).toHaveLength(1);
+      expect(updateCalls[0].draftId).toBe('reusable-1');
+    });
+  });
+
+  describe('TC-TCList-U001: Non-string description handling', () => {
+    it('renders without crashing when draft has ADF object description', async () => {
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'adf-1',
+              summary: 'Test with ADF description',
+              description: {
+                type: 'doc',
+                version: 1,
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: 'ADF paragraph' }],
+                  },
+                ],
+              },
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [{ id: 's1', action: 'Step action', result: 'Step result', data: '' }],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Test with ADF description')).toBeInTheDocument();
+      });
+    });
+
+    it('renders without crashing when draft has null description', async () => {
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'null-desc-1',
+              summary: 'Test with null description',
+              description: null,
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [{ id: 's1', action: 'Step action', result: 'Step result', data: '' }],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Test with null description')).toBeInTheDocument();
+      });
+    });
+
+    it('search filters work with non-string description drafts', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'adf-search-1',
+              summary: 'Searchable TC',
+              description: { type: 'doc', version: 1, content: [] },
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Searchable TC')).toBeInTheDocument();
+      });
+
+      // Type in search — should not crash
+      const searchInput = screen.getByPlaceholderText('Search test cases...');
+      await user.type(searchInput, 'Searchable');
+
+      await waitFor(() => {
+        expect(screen.getByText('Searchable TC')).toBeInTheDocument();
+      });
+    });
+
+    it('isTestCaseComplete handles non-string description as incomplete', async () => {
+      const user = userEvent.setup();
+
+      server.use(
+        http.get('*/api/drafts', () => {
+          return HttpResponse.json([
+            {
+              id: 'adf-complete-1',
+              summary: 'ADF Draft',
+              description: { type: 'doc', version: 1, content: [] },
+              status: 'draft',
+              projectKey: 'TEST',
+              steps: [{ id: 's1', action: 'Step', result: 'Result', data: '' }],
+              labels: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              xrayLinking: {
+                testPlanIds: [],
+                testPlanDisplays: [],
+                testExecutionIds: [],
+                testExecutionDisplays: [],
+                testSetIds: [],
+                testSetDisplays: [],
+                preconditionIds: [],
+                preconditionDisplays: [],
+                folderPath: '/',
+              },
+            },
+          ]);
+        }),
+      );
+
+      renderWithRouter(<TestCasesList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('ADF Draft')).toBeInTheDocument();
+      });
+
+      // Select the draft
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[1]);
+
+      // "Mark as Ready" should appear but show missing fields since description is not a string
+      await waitFor(() => {
+        expect(screen.getByText(/Missing Required Fields/)).toBeInTheDocument();
+      });
+    });
+  });
 });

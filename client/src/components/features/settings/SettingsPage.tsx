@@ -39,6 +39,8 @@ export function SettingsPage() {
         draftCounts={getDraftCountsByProject(allDrafts)}
       />
 
+      <ReusableTCSection />
+
       {/* About Section */}
       <Card>
         <div className="flex items-center gap-3 mb-4">
@@ -60,6 +62,72 @@ export function SettingsPage() {
       {/* Feature Demo Modal */}
       {showDemo && <FeatureDemo onClose={() => setShowDemo(false)} />}
     </div>
+  );
+}
+
+function ReusableTCSection() {
+  const { activeProject } = useApp();
+  const [prefix, setPrefix] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    setLoading(true);
+    settingsApi.getProjectSettings(activeProject)
+      .then(ps => setPrefix(ps.reusablePrefix || 'REUSE'))
+      .catch(() => setPrefix('REUSE'))
+      .finally(() => setLoading(false));
+  }, [activeProject]);
+
+  const handleSave = async () => {
+    if (!activeProject) return;
+    setSaving(true);
+    try {
+      const ps = await settingsApi.getProjectSettings(activeProject);
+      await settingsApi.updateProjectSettings(activeProject, { ...ps, reusablePrefix: prefix });
+    } catch (err) {
+      console.error('Failed to save prefix:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!activeProject) return null;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">Reusable Test Cases</h2>
+          <p className="text-sm text-text-muted">
+            Tests with this prefix in their summary can be pulled into RayDrop for editing
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-text-muted">Loading...</div>
+      ) : (
+        <div className="flex gap-2 items-end">
+          <Input
+            label={`Summary Prefix (${activeProject})`}
+            value={prefix}
+            onChange={e => setPrefix(e.target.value.toUpperCase())}
+            placeholder="e.g., REUSE"
+            className="flex-1"
+          />
+          <Button onClick={handleSave} disabled={saving || !prefix.trim()}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 
