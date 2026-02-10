@@ -1100,10 +1100,10 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
 export interface TestLinks {
   issueId: string;
   key: string;
-  testPlans: Array<{ issueId: string; key: string }>;
-  testExecutions: Array<{ issueId: string; key: string }>;
-  testSets: Array<{ issueId: string; key: string }>;
-  preconditions: Array<{ issueId: string; key: string }>;
+  testPlans: Array<{ issueId: string; key: string; summary: string }>;
+  testExecutions: Array<{ issueId: string; key: string; summary: string }>;
+  testSets: Array<{ issueId: string; key: string; summary: string }>;
+  preconditions: Array<{ issueId: string; key: string; summary: string }>;
   folder?: string;
 }
 
@@ -1119,25 +1119,25 @@ export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
         testPlans(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
         testSets(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
         testExecutions(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
         preconditions(limit: 100) {
           results {
             issueId
-            jira(fields: ["key"])
+            jira(fields: ["key", "summary"])
           }
         }
       }
@@ -1146,7 +1146,7 @@ export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
 
   interface LinkedEntity {
     issueId: string;
-    jira?: { key: string };
+    jira?: { key: string; summary: string };
   }
 
   interface Result {
@@ -1167,6 +1167,7 @@ export async function getTestWithLinks(issueId: string): Promise<TestLinks> {
   const mapEntity = (e: LinkedEntity) => ({
     issueId: e.issueId,
     key: e.jira?.key || '',
+    summary: e.jira?.summary || '',
   });
 
   return {

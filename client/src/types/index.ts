@@ -134,6 +134,17 @@ export interface TestDetails {
   steps: Array<{ id: string; action: string; data: string; result: string }>;
 }
 
+// Test with Xray linking data (for reusable TC pre-population)
+export interface TestLinks {
+  issueId: string;
+  key: string;
+  testPlans: Array<{ issueId: string; key: string; summary: string }>;
+  testExecutions: Array<{ issueId: string; key: string; summary: string }>;
+  testSets: Array<{ issueId: string; key: string; summary: string }>;
+  preconditions: Array<{ issueId: string; key: string; summary: string }>;
+  folder?: string;
+}
+
 // Test with detailed Jira fields (for TC Review page)
 export interface TestWithDetails {
   issueId: string;

@@ -5,7 +5,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { useApp } from '../../../context/AppContext';
 import { Button, StatusBadge, ImportProgressModal } from '../../ui';
 import { draftsApi, xrayApi, settingsApi } from '../../../services/api';
-import type { Draft, TestStep, ProjectSettings, TestDetails } from '../../../types';
+import type { Draft, TestStep, ProjectSettings, TestDetails, TestLinks } from '../../../types';
 import {
   type Step,
   type XrayCache,
@@ -298,11 +298,22 @@ export function CreateTestCase() {
     }
   };
 
-  const handleSelectReusableTC = (test: TestDetails) => {
+  const handleSelectReusableTC = async (test: TestDetails) => {
     // Pre-fill draft with all TC fields
     const steps = test.steps.length > 0
       ? test.steps.map(s => ({ ...s, id: crypto.randomUUID() }))
       : [createEmptyStep()];
+
+    // Fetch existing Xray links for this test
+    let links: TestLinks | null = null;
+    try {
+      links = await xrayApi.getTestLinks(test.issueId);
+    } catch (err) {
+      console.error('Failed to fetch test links:', err);
+    }
+
+    const mapDisplays = (items: Array<{ issueId: string; key: string; summary: string }>) =>
+      items.map(i => ({ id: i.issueId, display: `${i.key}: ${i.summary}` }));
 
     setDraft(d => ({
       ...d,
@@ -315,6 +326,18 @@ export function CreateTestCase() {
       isReusable: true,
       sourceTestKey: test.key,
       sourceTestIssueId: test.issueId,
+      xrayLinking: links ? {
+        ...d.xrayLinking,
+        testPlanIds: links.testPlans.map(t => t.issueId),
+        testPlanDisplays: mapDisplays(links.testPlans),
+        testExecutionIds: links.testExecutions.map(t => t.issueId),
+        testExecutionDisplays: mapDisplays(links.testExecutions),
+        testSetIds: links.testSets.map(t => t.issueId),
+        testSetDisplays: mapDisplays(links.testSets),
+        preconditionIds: links.preconditions.map(t => t.issueId),
+        preconditionDisplays: mapDisplays(links.preconditions),
+        folderPath: links.folder || d.xrayLinking.folderPath,
+      } : d.xrayLinking,
       updatedAt: Date.now(),
     }));
     setMode('scratch');

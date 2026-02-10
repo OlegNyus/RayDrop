@@ -398,6 +398,16 @@ describe('CreateTestCase', () => {
       },
     ];
 
+    const mockTestLinks = {
+      issueId: '99001',
+      key: 'WCP-9999',
+      testPlans: [{ issueId: '10001', key: 'WCP-7067', summary: 'Sprint 1 Test Plan' }],
+      testExecutions: [{ issueId: '10003', key: 'WCP-7069', summary: 'Release 1.0 Execution' }],
+      testSets: [{ issueId: '10004', key: 'WCP-7154', summary: 'Smoke Tests' }],
+      preconditions: [{ issueId: '10006', key: 'WCP-9209', summary: 'User is logged in' }],
+      folder: '/WCP/UI/Feature',
+    };
+
     beforeEach(() => {
       server.use(
         http.get('*/api/xray/test-plans/:projectKey', () => HttpResponse.json(mockTestPlans)),
@@ -415,6 +425,9 @@ describe('CreateTestCase', () => {
         }),
         http.get('*/api/xray/tests/by-prefix/:projectKey', () => {
           return HttpResponse.json(mockReusableTests);
+        }),
+        http.get('*/api/xray/tests/:issueId/links', () => {
+          return HttpResponse.json(mockTestLinks);
         }),
       );
     });
@@ -479,6 +492,57 @@ describe('CreateTestCase', () => {
       await waitFor(() => {
         expect(screen.getByText('Basic Info')).toBeInTheDocument();
       });
+    });
+
+    it('pre-populates Xray links from the selected reusable TC', async () => {
+      const user = userEvent.setup();
+      renderCreateTestCase();
+
+      // Wait for choice screen
+      await waitFor(() => {
+        expect(screen.getByText('From Reusable TC')).toBeInTheDocument();
+      });
+
+      // Click "From Reusable TC"
+      fireEvent.click(screen.getByText('From Reusable TC'));
+
+      // Wait for selector to load tests
+      await waitFor(() => {
+        expect(screen.getByText('WCP-9999')).toBeInTheDocument();
+      });
+
+      // Click on the reusable test
+      await user.click(screen.getByText(/REUSE Login Test/));
+
+      // Should navigate to editor mode
+      await waitFor(() => {
+        expect(screen.getByText('Basic Info')).toBeInTheDocument();
+      });
+
+      // Navigate to step 3 (Xray Linking)
+      // Click Next from step 1 to step 2
+      fireEvent.click(screen.getByText('Next →'));
+      await waitFor(() => {
+        expect(screen.getByText('+ Add Step')).toBeInTheDocument();
+      });
+
+      // Click Next from step 2 to step 3
+      fireEvent.click(screen.getByText('Next →'));
+      await waitFor(() => {
+        // Reusable TC shows "Update in Xray" instead of "Import to Xray"
+        expect(screen.getByText('Update in Xray')).toBeInTheDocument();
+      });
+
+      // Wait for Xray loading to complete
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      });
+
+      // Verify pre-populated Xray links appear as tags (tags show key before colon)
+      expect(screen.getByText('WCP-7067')).toBeInTheDocument(); // Test Plan
+      expect(screen.getByText('WCP-7069')).toBeInTheDocument(); // Test Execution
+      expect(screen.getByText('WCP-7154')).toBeInTheDocument(); // Test Set
+      expect(screen.getByText('WCP-9209')).toBeInTheDocument(); // Precondition
     });
 
     it('does not crash when selecting a reusable TC with undefined description', async () => {
