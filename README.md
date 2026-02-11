@@ -39,6 +39,8 @@ npm install --prefix client
 npm install --prefix server
 ```
 
+**Note:** If you're using `nvm` (Node Version Manager), the project includes a `.nvmrc` file. Run `nvm use` to automatically switch to the correct Node.js version.
+
 ### 4. Start the app
 
 ```bash
@@ -94,6 +96,8 @@ Copy these folders to keep your data safe:
 **`node: command not found`** — Node.js isn't installed or not in your PATH. Reinstall from https://nodejs.org and restart your terminal.
 
 **`npm install` fails with permission errors** — On Mac, try `sudo npm install`. On Windows, run Command Prompt as Administrator.
+
+**`npm install` fails with peer dependency errors** — Make sure you're using Node.js v20.19+ or v22.12+. The project includes `.npmrc` and `package.json` engines field to help prevent dependency conflicts. If issues persist, ensure `package-lock.json` files are up to date by running `npm install` in the root, client, and server directories.
 
 **Port 5173 already in use** — Another instance is running. Close it or kill the process:
 ```bash
