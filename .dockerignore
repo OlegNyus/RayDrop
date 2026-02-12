@@ -1,0 +1,11 @@
+node_modules
+dist
+config
+testCases
+.git
+tests
+e2e
+coverage
+.claude
+docs
+mockup
