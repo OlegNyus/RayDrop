@@ -135,7 +135,6 @@ export function CreateTestCase() {
     }
   };
 
-  // Helper to check if summary has a valid Title (not just Functional Area + Layer)
   const isStep1Valid = () => summaryHasTitle(draft.summary) && safeString(draft.description).trim().length > 0;
   const isStep2Valid = () => draft.steps.every(s => s.action.trim() && s.result.trim());
 
