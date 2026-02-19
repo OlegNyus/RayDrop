@@ -19,6 +19,7 @@ export default defineConfig({
     // Use node environment for API tests
     environmentMatchGlobs: [
       ['tests/**/api.test.ts', 'node'],
+      ['tests/server/**/*.test.ts', 'node'],
     ],
 
     // Coverage configuration
@@ -111,6 +112,7 @@ export default defineConfig({
       'react-dom': path.resolve(__dirname, './client/node_modules/react-dom'),
       'react-router-dom': path.resolve(__dirname, './client/node_modules/react-router-dom'),
       'react-router': path.resolve(__dirname, './client/node_modules/react-router'),
+      'supertest': path.resolve(__dirname, './server/node_modules/supertest'),
     },
   },
 });

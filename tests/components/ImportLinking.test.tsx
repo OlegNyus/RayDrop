@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, fireEvent } from '../helpers/render';
 import { EditTestCase } from '../../client/src/components/features/create/EditTestCase';
 import { http, HttpResponse } from 'msw';
@@ -7,6 +7,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from '../../client/src/context/ThemeContext';
 import { AppProvider } from '../../client/src/context/AppContext';
 import { render } from '@testing-library/react';
+
+
 
 // Mock draft with xray linking - status 'draft' so user can navigate steps
 const mockDraft = {
@@ -153,6 +155,21 @@ describe('Import and Linking', () => {
       }),
       http.get('*/api/xray/tests/by-status/*', () => {
         return HttpResponse.json([]);
+      }),
+      // Validation endpoint (called after import to verify links)
+      http.get('*/api/xray/tests/:issueId/links', ({ params }) => {
+        return HttpResponse.json({
+          issueId: params.issueId,
+          key: 'WCP-9999',
+          testPlans: [
+            { issueId: '10001', key: 'WCP-7067' },
+            { issueId: '10002', key: 'WCP-7068' },
+          ],
+          testExecutions: [{ issueId: '10003', key: 'WCP-7069' }],
+          testSets: [{ issueId: '10004', key: 'WCP-7154' }],
+          preconditions: [{ issueId: '10005', key: 'WCP-9209' }],
+          folder: '/WCP/UI/Feature',
+        });
       }),
     );
   });
