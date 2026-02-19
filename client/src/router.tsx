@@ -5,6 +5,7 @@ import { TestCasesList } from './components/features/test-cases/TestCasesList';
 import { CreateTestCase } from './components/features/create/CreateTestCase';
 import { EditTestCase } from './components/features/create/EditTestCase';
 import { SettingsPage } from './components/features/settings/SettingsPage';
+import { HelpPage } from './components/features/help/HelpPage';
 import { XrayEntityPage } from './components/features/xray/XrayEntityPage';
 import { XrayTestView } from './components/features/xray/XrayTestView';
 import { XrayPreconditionView } from './components/features/xray/XrayPreconditionView';
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
       { path: 'xray/test/:issueId', element: <XrayTestView /> },
       { path: 'xray/precondition/:issueId', element: <XrayPreconditionView /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: 'help', element: <HelpPage /> },
       { path: '*', element: <Navigate to="/dashboard" replace /> },
     ],
   },
