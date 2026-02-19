@@ -17,6 +17,7 @@ function CollapsibleSection({ icon, title, subtitle, defaultOpen = false, childr
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center gap-3 text-left"
+        aria-expanded={isOpen}
       >
         <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
           {icon}
