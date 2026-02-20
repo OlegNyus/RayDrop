@@ -164,18 +164,6 @@ const AUTOMATION_STATUS_VALUES = ['Manual', 'Planned For Automation', 'In Progre
 
 export async function detectAutomationFieldId(projectKey: string): Promise<string | null> {
   // Scan custom fields on existing tests to find the Automation Status field
-  const query = `
-    query GetTests($jql: String!, $limit: Int!) {
-      getTests(jql: $jql, limit: $limit) {
-        total
-        results {
-          issueId
-          jira(fields: [${generateCustomFieldList(10000, 10199)}])
-        }
-      }
-    }
-  `;
-
   interface TestResult {
     getTests: {
       total: number;
