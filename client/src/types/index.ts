@@ -42,6 +42,7 @@ export interface ProjectSettings {
   collections: Collection[];
   color: string;
   reusablePrefix: string;
+  automationStatusFieldId?: string;
 }
 
 export interface Collection {
@@ -98,6 +99,7 @@ export interface Draft {
   isReusable?: boolean;
   sourceTestKey?: string;
   sourceTestIssueId?: string;
+  automationStatus?: string;
 }
 
 // Xray Types
@@ -149,6 +151,7 @@ export interface TestDetails {
   priority: string;
   labels: string[];
   steps: Array<{ id: string; action: string; data: string; result: string }>;
+  automationStatus?: string;
 }
 
 // Test with Xray linking data (for reusable TC pre-population)

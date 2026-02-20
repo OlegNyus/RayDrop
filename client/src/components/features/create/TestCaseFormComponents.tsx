@@ -38,6 +38,7 @@ export function createEmptyDraft(projectKey: string): Draft {
     description: '',
     testType: 'Manual',
     priority: 'Medium',
+    automationStatus: '',
     labels: [],
     collectionId: null,
     steps: [createEmptyStep()],
@@ -178,14 +179,39 @@ export function Step1BasicInfo({ draft, updateDraft, errors, projectSettings, on
         />
         {errors.description && <p className="text-xs text-error">{errors.description}</p>}
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-1">
           <label className="block text-sm font-medium text-text-primary">Test Type</label>
           <div className="px-3 py-2 bg-sidebar rounded-lg text-text-secondary text-sm">{draft.testType}</div>
         </div>
         <div className="space-y-1">
           <label className="block text-sm font-medium text-text-primary">Priority</label>
-          <div className="px-3 py-2 bg-sidebar rounded-lg text-text-secondary text-sm">{draft.priority}</div>
+          <select
+            value={draft.priority}
+            onChange={e => updateDraft({ priority: e.target.value })}
+            className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="Highest">Highest</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+            <option value="Lowest">Lowest</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-text-primary">Automation Status</label>
+          <select
+            value={draft.automationStatus || ''}
+            onChange={e => updateDraft({ automationStatus: e.target.value })}
+            className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="">Not Set</option>
+            <option value="Manual">Manual</option>
+            <option value="Planned For Automation">Planned For Automation</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Automated">Automated</option>
+            <option value="Maintenance">Maintenance</option>
+          </select>
         </div>
       </div>
       <div className="space-y-1">

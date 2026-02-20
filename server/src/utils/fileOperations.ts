@@ -167,6 +167,7 @@ export function getProjectSettings(projectKey: string): ProjectSettings {
     collections: [],
     color: '',
     reusablePrefix: 'REUSE',
+    automationStatusFieldId: '',
   };
 }
 

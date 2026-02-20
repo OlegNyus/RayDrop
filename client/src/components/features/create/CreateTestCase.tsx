@@ -308,6 +308,7 @@ export function CreateTestCase() {
       description: safeString(test.description),
       testType: (test.testType === 'Manual' || test.testType === 'Automated') ? test.testType : 'Manual',
       priority: test.priority || 'Medium',
+      automationStatus: test.automationStatus || '',
       labels: test.labels || [],
       steps,
       isReusable: true,

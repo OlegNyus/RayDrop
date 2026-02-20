@@ -113,8 +113,8 @@ export function ImportedTestCaseView({ draft }: ImportedTestCaseViewProps) {
               <p className="text-text-primary">{draft.priority}</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">Project</label>
-              <p className="text-text-primary">{draft.projectKey}</p>
+              <label className="block text-sm font-medium text-text-muted mb-1">Automation Status</label>
+              <p className="text-text-primary">{draft.automationStatus || 'Not Set'}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-muted mb-1">Imported</label>

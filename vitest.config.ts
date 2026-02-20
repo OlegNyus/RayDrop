@@ -113,6 +113,7 @@ export default defineConfig({
       'react-router-dom': path.resolve(__dirname, './client/node_modules/react-router-dom'),
       'react-router': path.resolve(__dirname, './client/node_modules/react-router'),
       'supertest': path.resolve(__dirname, './server/node_modules/supertest'),
+      'axios': path.resolve(__dirname, './server/node_modules/axios'),
     },
   },
 });
