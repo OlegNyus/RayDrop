@@ -28,6 +28,7 @@ export interface ProjectSettings {
   collections: Collection[];
   color: string;
   reusablePrefix: string;
+  automationStatusFieldId?: string;
 }
 
 export interface Collection {
@@ -85,6 +86,7 @@ export interface Draft {
   isReusable?: boolean;
   sourceTestKey?: string;
   sourceTestIssueId?: string;
+  automationStatus?: string;
 }
 
 // ============ Xray Types ============

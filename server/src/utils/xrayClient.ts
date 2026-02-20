@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { readConfig, writeConfig } from './fileOperations.js';
+import { readConfig, writeConfig, getProjectSettings } from './fileOperations.js';
 import type { Config, XrayEntity, FolderNode, ImportResult, ValidationResult, Draft, TestWithDetails } from '../types.js';
 
 const XRAY_AUTH_URL = 'https://xray.cloud.getxray.app/api/v2/authenticate';
@@ -86,12 +86,15 @@ interface BulkImportPayload {
     project: { key: string };
     description: string;
     labels: string[];
+    priority: { name: string };
+    [key: string]: unknown;
   };
   steps: Array<{
     action: string;
     data: string;
     result: string;
   }>;
+  update_key?: string;
 }
 
 // Code detection for Xray export formatting
@@ -158,20 +161,32 @@ function formatDataForXray(data: string): string {
 }
 
 function toBulkImportFormat(testCases: Draft[], projectKey: string): BulkImportPayload[] {
-  return testCases.map((tc) => ({
-    testtype: tc.testType || 'Manual',
-    fields: {
+  const projectSettings = getProjectSettings(projectKey);
+  const automationFieldId = projectSettings.automationStatusFieldId;
+
+  return testCases.map((tc) => {
+    const fields: BulkImportPayload['fields'] = {
       summary: tc.summary,
       project: { key: projectKey },
       description: tc.description || '',
       labels: tc.labels || [],
-    },
-    steps: (tc.steps || []).map((step) => ({
-      action: step.action || '',
-      data: formatDataForXray(step.data || ''),
-      result: step.result || '',
-    })),
-  }));
+      priority: { name: tc.priority || 'Medium' },
+    };
+
+    if (automationFieldId && tc.automationStatus) {
+      fields[automationFieldId] = { value: tc.automationStatus };
+    }
+
+    return {
+      testtype: tc.testType || 'Manual',
+      fields,
+      steps: (tc.steps || []).map((step) => ({
+        action: step.action || '',
+        data: formatDataForXray(step.data || ''),
+        result: step.result || '',
+      })),
+    };
+  });
 }
 
 export async function validateCredentials(credentials: { xrayClientId: string; xrayClientSecret: string }): Promise<ValidationResult> {
@@ -1516,16 +1531,25 @@ export async function updateExistingTest(draft: Draft): Promise<ImportResult> {
 
     const token = await getToken(config);
     const projectKey = draft.projectKey;
+    const projectSettings = getProjectSettings(projectKey);
+    const automationFieldId = projectSettings.automationStatusFieldId;
 
     // Use bulk import endpoint with the existing test key to trigger an update
-    const payload = [{
+    const fields: BulkImportPayload['fields'] = {
+      summary: draft.summary,
+      project: { key: projectKey },
+      description: draft.description || '',
+      labels: draft.labels || [],
+      priority: { name: draft.priority || 'Medium' },
+    };
+
+    if (automationFieldId && draft.automationStatus) {
+      fields[automationFieldId] = { value: draft.automationStatus };
+    }
+
+    const payload: BulkImportPayload[] = [{
       testtype: draft.testType || 'Manual',
-      fields: {
-        summary: draft.summary,
-        project: { key: projectKey },
-        description: draft.description || '',
-        labels: draft.labels || [],
-      },
+      fields,
       update_key: draft.sourceTestKey,
       steps: (draft.steps || []).map((step) => ({
         action: step.action || '',
