@@ -41,8 +41,6 @@ export function SettingsPage() {
 
       <ReusableTCSection />
 
-      <AutomationStatusSection />
-
       {/* About Section */}
       <Card>
         <div className="flex items-center gap-3 mb-4">
@@ -127,78 +125,6 @@ function ReusableTCSection() {
           <Button onClick={handleSave} disabled={saving || !prefix.trim()}>
             {saving ? 'Saving...' : 'Save'}
           </Button>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function AutomationStatusSection() {
-  const { activeProject } = useApp();
-  const [fieldId, setFieldId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!activeProject) return;
-    setLoading(true);
-    settingsApi.getProjectSettings(activeProject)
-      .then(ps => setFieldId(ps.automationStatusFieldId || ''))
-      .catch(() => setFieldId(''))
-      .finally(() => setLoading(false));
-  }, [activeProject]);
-
-  const handleSave = async () => {
-    if (!activeProject) return;
-    setSaving(true);
-    try {
-      const ps = await settingsApi.getProjectSettings(activeProject);
-      await settingsApi.updateProjectSettings(activeProject, { ...ps, automationStatusFieldId: fieldId.trim() });
-    } catch (err) {
-      console.error('Failed to save automation status field ID:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!activeProject) return null;
-
-  return (
-    <Card>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
-          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-text-primary">Automation Status Field</h2>
-          <p className="text-sm text-text-muted">
-            Jira custom field ID used to set the Automation Status on imported tests
-          </p>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-sm text-text-muted">Loading...</div>
-      ) : (
-        <div className="space-y-2">
-          <div className="flex gap-2 items-end">
-            <Input
-              label={`Custom Field ID (${activeProject})`}
-              value={fieldId}
-              onChange={e => setFieldId(e.target.value)}
-              placeholder="e.g., customfield_11254"
-              className="flex-1"
-            />
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
-          <p className="text-xs text-text-muted">
-            Find this in Jira: Admin → Issues → Custom Fields → Automation Status → the ID in the URL.
-          </p>
         </div>
       )}
     </Card>

@@ -68,23 +68,20 @@ describe('TC-FormFields-U001: Test Type, Priority, and Automation Status dropdow
     );
   });
 
-  it('renders Test Type dropdown with Manual and Automated options', async () => {
+  it('renders Test Type as static read-only field defaulting to Manual', async () => {
     renderCreateTestCase();
     await skipChoiceScreen();
 
     const testTypeLabel = screen.getByText('Test Type');
     expect(testTypeLabel).toBeInTheDocument();
 
-    // Find the select element associated with Test Type
-    const selects = screen.getAllByRole('combobox');
-    const testTypeSelect = selects.find(s => {
-      const options = Array.from(s.querySelectorAll('option'));
-      return options.some(o => o.textContent === 'Manual') && options.some(o => o.textContent === 'Automated');
-    });
-    expect(testTypeSelect).toBeDefined();
-
-    // Verify default is Manual
-    expect(testTypeSelect).toHaveValue('Manual');
+    // Test Type should be a static div (not a select dropdown)
+    // The label's sibling div should contain "Manual" as plain text
+    const testTypeContainer = testTypeLabel.closest('.space-y-1');
+    expect(testTypeContainer).toBeDefined();
+    const staticDiv = testTypeContainer!.querySelector('.bg-sidebar');
+    expect(staticDiv).not.toBeNull();
+    expect(staticDiv!.textContent).toBe('Manual');
   });
 
   it('renders Priority dropdown with five options', async () => {
@@ -130,21 +127,6 @@ describe('TC-FormFields-U001: Test Type, Priority, and Automation Status dropdow
 
     // Default is empty (Not Set)
     expect(autoSelect).toHaveValue('');
-  });
-
-  it('allows changing Test Type to Automated', async () => {
-    const user = userEvent.setup();
-    renderCreateTestCase();
-    await skipChoiceScreen();
-
-    const selects = screen.getAllByRole('combobox');
-    const testTypeSelect = selects.find(s => {
-      const options = Array.from(s.querySelectorAll('option'));
-      return options.some(o => o.textContent === 'Automated') && options.length === 2;
-    })!;
-
-    await user.selectOptions(testTypeSelect, 'Automated');
-    expect(testTypeSelect).toHaveValue('Automated');
   });
 
   it('allows changing Priority', async () => {

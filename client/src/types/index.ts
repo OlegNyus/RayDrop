@@ -151,6 +151,7 @@ export interface TestDetails {
   priority: string;
   labels: string[];
   steps: Array<{ id: string; action: string; data: string; result: string }>;
+  automationStatus?: string;
 }
 
 // Test with Xray linking data (for reusable TC pre-population)

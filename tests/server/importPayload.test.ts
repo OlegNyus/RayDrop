@@ -5,6 +5,7 @@ const mockAxiosPost = vi.hoisted(() => vi.fn());
 const mockReadConfig = vi.hoisted(() => vi.fn());
 const mockWriteConfig = vi.hoisted(() => vi.fn());
 const mockGetProjectSettings = vi.hoisted(() => vi.fn());
+const mockSaveProjectSettings = vi.hoisted(() => vi.fn());
 
 vi.mock('axios', () => ({
   default: { post: mockAxiosPost, get: vi.fn() },
@@ -14,9 +15,10 @@ vi.mock('../../server/src/utils/fileOperations.js', () => ({
   readConfig: mockReadConfig,
   writeConfig: mockWriteConfig,
   getProjectSettings: mockGetProjectSettings,
+  saveProjectSettings: mockSaveProjectSettings,
 }));
 
-import { importToXray, updateExistingTest } from '../../server/src/utils/xrayClient';
+import { importToXray, updateExistingTest, detectAutomationFieldId } from '../../server/src/utils/xrayClient';
 import type { Draft } from '../../server/src/types';
 
 function makeDraft(overrides: Partial<Draft> = {}): Draft {
@@ -61,19 +63,25 @@ const VALID_CONFIG = {
   },
 };
 
+const EMPTY_PROJECT_SETTINGS = {
+  functionalAreas: [],
+  labels: [],
+  collections: [],
+  color: '',
+  reusablePrefix: 'REUSE',
+  automationStatusFieldId: '',
+};
+
+function emptyGraphQLResponse() {
+  return { data: { data: { getTests: { total: 0, results: [] } } } };
+}
+
 describe('TC-Import-U001: Import payload includes priority', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockReadConfig.mockReturnValue(VALID_CONFIG);
     mockWriteConfig.mockImplementation(() => {});
-    mockGetProjectSettings.mockReturnValue({
-      functionalAreas: [],
-      labels: [],
-      collections: [],
-      color: '',
-      reusablePrefix: 'REUSE',
-      automationStatusFieldId: '',
-    });
+    mockGetProjectSettings.mockReturnValue({ ...EMPTY_PROJECT_SETTINGS });
   });
 
   it('sends priority in the fields object', async () => {
@@ -128,11 +136,7 @@ describe('TC-Import-U002: Import payload includes automation status custom field
 
   it('includes custom field when automationStatusFieldId is configured and value is set', async () => {
     mockGetProjectSettings.mockReturnValue({
-      functionalAreas: [],
-      labels: [],
-      collections: [],
-      color: '',
-      reusablePrefix: 'REUSE',
+      ...EMPTY_PROJECT_SETTINGS,
       automationStatusFieldId: 'customfield_11254',
     });
     mockAxiosPost.mockResolvedValue({ data: { jobId: 'job-123' } });
@@ -147,16 +151,14 @@ describe('TC-Import-U002: Import payload includes automation status custom field
     expect(payload[0].fields['customfield_11254']).toEqual({ value: 'Automated' });
   });
 
-  it('omits custom field when automationStatusFieldId is not configured', async () => {
-    mockGetProjectSettings.mockReturnValue({
-      functionalAreas: [],
-      labels: [],
-      collections: [],
-      color: '',
-      reusablePrefix: 'REUSE',
-      automationStatusFieldId: '',
+  it('omits custom field when automationStatusFieldId is not configured and auto-detect fails', async () => {
+    mockGetProjectSettings.mockReturnValue({ ...EMPTY_PROJECT_SETTINGS });
+    mockAxiosPost.mockImplementation((url: string) => {
+      if (url.includes('graphql')) {
+        return Promise.resolve(emptyGraphQLResponse());
+      }
+      return Promise.resolve({ data: { jobId: 'job-123' } });
     });
-    mockAxiosPost.mockResolvedValue({ data: { jobId: 'job-123' } });
 
     const draft = makeDraft({ automationStatus: 'Automated' });
     await importToXray([draft], 'WCP');
@@ -170,11 +172,7 @@ describe('TC-Import-U002: Import payload includes automation status custom field
 
   it('omits custom field when automationStatus value is empty', async () => {
     mockGetProjectSettings.mockReturnValue({
-      functionalAreas: [],
-      labels: [],
-      collections: [],
-      color: '',
-      reusablePrefix: 'REUSE',
+      ...EMPTY_PROJECT_SETTINGS,
       automationStatusFieldId: 'customfield_11254',
     });
     mockAxiosPost.mockResolvedValue({ data: { jobId: 'job-123' } });
@@ -198,14 +196,7 @@ describe('TC-Import-U003: updateExistingTest includes priority and custom field'
   });
 
   it('sends priority in update payload', async () => {
-    mockGetProjectSettings.mockReturnValue({
-      functionalAreas: [],
-      labels: [],
-      collections: [],
-      color: '',
-      reusablePrefix: 'REUSE',
-      automationStatusFieldId: '',
-    });
+    mockGetProjectSettings.mockReturnValue({ ...EMPTY_PROJECT_SETTINGS });
     // Mock import call returning jobId, then job status returning success
     mockAxiosPost.mockResolvedValue({ data: { jobId: 'job-456' } });
     // Mock the GET call for job status
@@ -237,11 +228,7 @@ describe('TC-Import-U003: updateExistingTest includes priority and custom field'
 
   it('includes automation status custom field in update payload', async () => {
     mockGetProjectSettings.mockReturnValue({
-      functionalAreas: [],
-      labels: [],
-      collections: [],
-      color: '',
-      reusablePrefix: 'REUSE',
+      ...EMPTY_PROJECT_SETTINGS,
       automationStatusFieldId: 'customfield_11254',
     });
     mockAxiosPost.mockResolvedValue({ data: { jobId: 'job-789' } });
@@ -267,5 +254,90 @@ describe('TC-Import-U003: updateExistingTest includes priority and custom field'
     );
     const payload = importCall![1] as Array<{ fields: Record<string, unknown> }>;
     expect(payload[0].fields['customfield_11254']).toEqual({ value: 'Planned For Automation' });
+  });
+});
+
+describe('TC-Import-U004: Auto-detection of automation status field ID', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockReadConfig.mockReturnValue(VALID_CONFIG);
+    mockWriteConfig.mockImplementation(() => {});
+    mockGetProjectSettings.mockReturnValue({ ...EMPTY_PROJECT_SETTINGS });
+    mockSaveProjectSettings.mockImplementation(() => {});
+  });
+
+  it('detects field ID from existing test with Automated value', async () => {
+    mockAxiosPost.mockImplementation((_url: string, body: Record<string, unknown>) => {
+      const query = body.query as string;
+      if (query?.includes('getTests')) {
+        return Promise.resolve({
+          data: {
+            data: {
+              getTests: {
+                total: 1,
+                results: [{
+                  issueId: '10001',
+                  jira: {
+                    customfield_11254: { value: 'Automated' },
+                    customfield_11255: 'some string value',
+                  },
+                }],
+              },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: { jobId: 'job-123' } });
+    });
+
+    const result = await detectAutomationFieldId('WCP');
+    expect(result).toBe('customfield_11254');
+    expect(mockSaveProjectSettings).toHaveBeenCalledWith('WCP', expect.objectContaining({
+      automationStatusFieldId: 'customfield_11254',
+    }));
+  });
+
+  it('returns null when no tests have automation status fields', async () => {
+    mockAxiosPost.mockImplementation((_url: string, body: Record<string, unknown>) => {
+      const query = body.query as string;
+      if (query?.includes('getTests')) {
+        return Promise.resolve(emptyGraphQLResponse());
+      }
+      return Promise.resolve({ data: { jobId: 'job-123' } });
+    });
+
+    const result = await detectAutomationFieldId('WCP');
+    expect(result).toBeNull();
+    expect(mockSaveProjectSettings).not.toHaveBeenCalled();
+  });
+
+  it('auto-detects and includes field in import when not pre-configured', async () => {
+    mockAxiosPost.mockImplementation((url: string, body: unknown) => {
+      if (url.includes('graphql')) {
+        return Promise.resolve({
+          data: {
+            data: {
+              getTests: {
+                total: 1,
+                results: [{
+                  issueId: '10001',
+                  jira: { customfield_11254: { value: 'Manual' } },
+                }],
+              },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: { jobId: 'job-auto' } });
+    });
+
+    const draft = makeDraft({ automationStatus: 'Automated' });
+    await importToXray([draft], 'WCP');
+
+    const importCall = mockAxiosPost.mock.calls.find(
+      (call: unknown[]) => (call[0] as string).includes('/import/test/bulk')
+    );
+    const payload = importCall![1] as Array<{ fields: Record<string, unknown> }>;
+    expect(payload[0].fields['customfield_11254']).toEqual({ value: 'Automated' });
   });
 });

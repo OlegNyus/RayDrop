@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { readConfig, writeConfig, getProjectSettings } from './fileOperations.js';
+import { readConfig, writeConfig, getProjectSettings, saveProjectSettings } from './fileOperations.js';
 import type { Config, XrayEntity, FolderNode, ImportResult, ValidationResult, Draft, TestWithDetails } from '../types.js';
 
 const XRAY_AUTH_URL = 'https://xray.cloud.getxray.app/api/v2/authenticate';
@@ -160,9 +160,107 @@ function formatDataForXray(data: string): string {
   return `{code:${language}}\n${data}\n{code}`;
 }
 
-function toBulkImportFormat(testCases: Draft[], projectKey: string): BulkImportPayload[] {
+const AUTOMATION_STATUS_VALUES = ['Manual', 'Planned For Automation', 'In Progress', 'Automated', 'Maintenance'];
+
+export async function detectAutomationFieldId(projectKey: string): Promise<string | null> {
+  // Scan custom fields on existing tests to find the Automation Status field
+  const query = `
+    query GetTests($jql: String!, $limit: Int!) {
+      getTests(jql: $jql, limit: $limit) {
+        total
+        results {
+          issueId
+          jira(fields: [${generateCustomFieldList(10000, 10199)}])
+        }
+      }
+    }
+  `;
+
+  interface TestResult {
+    getTests: {
+      total: number;
+      results: Array<{
+        issueId: string;
+        jira?: Record<string, unknown>;
+      }>;
+    };
+  }
+
+  const fieldBatches = [
+    [10000, 10199],
+    [10200, 10399],
+    [10400, 10599],
+    [10600, 10799],
+    [10800, 10999],
+    [11000, 11199],
+    [11200, 11399],
+    [11400, 11599],
+    [11600, 11799],
+    [11800, 11999],
+    [12000, 12199],
+    [12200, 12399],
+    [12400, 12599],
+    [12600, 12799],
+    [12800, 12999],
+  ] as const;
+
+  for (const [start, end] of fieldBatches) {
+    const batchQuery = `
+      query GetTests($jql: String!, $limit: Int!) {
+        getTests(jql: $jql, limit: $limit) {
+          total
+          results {
+            issueId
+            jira(fields: [${generateCustomFieldList(start, end)}])
+          }
+        }
+      }
+    `;
+
+    try {
+      const data = await executeGraphQL<TestResult>(batchQuery, {
+        jql: `project = '${projectKey}' AND issuetype = Test`,
+        limit: 5,
+      });
+
+      for (const test of data.getTests.results) {
+        if (!test.jira) continue;
+        for (const [fieldKey, fieldValue] of Object.entries(test.jira)) {
+          if (
+            fieldKey.startsWith('customfield_') &&
+            fieldValue &&
+            typeof fieldValue === 'object' &&
+            'value' in (fieldValue as Record<string, unknown>) &&
+            AUTOMATION_STATUS_VALUES.includes((fieldValue as { value: string }).value)
+          ) {
+            // Found it — cache and return
+            const projectSettings = getProjectSettings(projectKey);
+            projectSettings.automationStatusFieldId = fieldKey;
+            saveProjectSettings(projectKey, projectSettings);
+            return fieldKey;
+          }
+        }
+      }
+    } catch {
+      // Batch failed (e.g., invalid field range) — continue to next batch
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function generateCustomFieldList(start: number, end: number): string {
+  const fields: string[] = [];
+  for (let i = start; i <= end; i++) {
+    fields.push(`"customfield_${i}"`);
+  }
+  return fields.join(', ');
+}
+
+function toBulkImportFormat(testCases: Draft[], projectKey: string, automationFieldIdOverride?: string): BulkImportPayload[] {
   const projectSettings = getProjectSettings(projectKey);
-  const automationFieldId = projectSettings.automationStatusFieldId;
+  const automationFieldId = automationFieldIdOverride || projectSettings.automationStatusFieldId;
 
   return testCases.map((tc) => {
     const fields: BulkImportPayload['fields'] = {
@@ -242,7 +340,17 @@ export async function importToXray(testCases: Draft[], projectKey: string | null
       return { success: false, error: 'No project key specified' };
     }
 
-    const payload = toBulkImportFormat(testCases, targetProject);
+    // Auto-detect automation status field ID if any draft needs it
+    let automationFieldId: string | undefined;
+    const projectSettings = getProjectSettings(targetProject);
+    if (!projectSettings.automationStatusFieldId && testCases.some(tc => tc.automationStatus)) {
+      const detected = await detectAutomationFieldId(targetProject);
+      if (detected) {
+        automationFieldId = detected;
+      }
+    }
+
+    const payload = toBulkImportFormat(testCases, targetProject, automationFieldId);
 
     const response = await axios.post(XRAY_IMPORT_URL, payload, {
       headers: {
@@ -1054,9 +1162,21 @@ export interface TestDetails {
   priority: string;
   labels: string[];
   steps: TestStep[];
+  automationStatus?: string;
 }
 
-export async function getTestDetails(issueId: string): Promise<TestDetails> {
+export async function getTestDetails(issueId: string, projectKey?: string): Promise<TestDetails> {
+  let automationFieldId: string | undefined;
+  if (projectKey) {
+    const projectSettings = getProjectSettings(projectKey);
+    automationFieldId = projectSettings.automationStatusFieldId || undefined;
+  }
+
+  const jiraFields = ['key', 'summary', 'description', 'priority', 'labels'];
+  if (automationFieldId) {
+    jiraFields.push(automationFieldId);
+  }
+
   const query = `
     query GetTest($issueId: String!) {
       getTest(issueId: $issueId) {
@@ -1070,7 +1190,7 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
           data
           result
         }
-        jira(fields: ["key", "summary", "description", "priority", "labels"])
+        jira(fields: [${jiraFields.map(f => `"${f}"`).join(', ')}])
       }
     }
   `;
@@ -1080,7 +1200,7 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
       issueId: string;
       testType?: { name: string };
       steps?: Array<{ id: string; action: string; data: string; result: string }>;
-      jira?: {
+      jira?: Record<string, unknown> & {
         key: string;
         summary: string;
         description: string;
@@ -1092,6 +1212,12 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
 
   const data = await executeGraphQL<Result>(query, { issueId });
   const test = data.getTest;
+
+  let automationStatus: string | undefined;
+  if (automationFieldId && test.jira?.[automationFieldId]) {
+    const fieldVal = test.jira[automationFieldId] as { value?: string };
+    automationStatus = fieldVal.value;
+  }
 
   return {
     issueId: test.issueId,
@@ -1107,6 +1233,7 @@ export async function getTestDetails(issueId: string): Promise<TestDetails> {
       data: s.data || '',
       result: s.result || '',
     })),
+    automationStatus,
   };
 }
 
@@ -1452,6 +1579,13 @@ export async function getTestsByStatus(projectKey: string, status: string): Prom
 // ============ Get Tests by Summary Prefix ============
 
 export async function getTestsByPrefix(projectKey: string, prefix: string): Promise<TestDetails[]> {
+  const projectSettings = getProjectSettings(projectKey);
+  const automationFieldId = projectSettings.automationStatusFieldId;
+  const jiraFields = ['key', 'summary', 'description', 'priority', 'labels'];
+  if (automationFieldId) {
+    jiraFields.push(automationFieldId);
+  }
+
   const query = `
     query GetTests($jql: String!, $limit: Int!) {
       getTests(jql: $jql, limit: $limit) {
@@ -1467,7 +1601,7 @@ export async function getTestsByPrefix(projectKey: string, prefix: string): Prom
             data
             result
           }
-          jira(fields: ["key", "summary", "description", "priority", "labels"])
+          jira(fields: [${jiraFields.map(f => `"${f}"`).join(', ')}])
         }
       }
     }
@@ -1480,7 +1614,7 @@ export async function getTestsByPrefix(projectKey: string, prefix: string): Prom
         issueId: string;
         testType?: { name: string };
         steps?: Array<{ id: string; action: string; data: string; result: string }>;
-        jira?: {
+        jira?: Record<string, unknown> & {
           key: string;
           summary: string;
           description: string;
@@ -1499,21 +1633,30 @@ export async function getTestsByPrefix(projectKey: string, prefix: string): Prom
     limit: 200,
   });
 
-  return data.getTests.results.map((t) => ({
-    issueId: t.issueId,
-    key: t.jira?.key || '',
-    summary: t.jira?.summary || '',
-    description: extractDescription(t.jira?.description),
-    testType: t.testType?.name || 'Manual',
-    priority: t.jira?.priority?.name || 'Medium',
-    labels: t.jira?.labels || [],
-    steps: (t.steps || []).map((s) => ({
-      id: s.id,
-      action: s.action || '',
-      data: s.data || '',
-      result: s.result || '',
-    })),
-  }));
+  return data.getTests.results.map((t) => {
+    let automationStatus: string | undefined;
+    if (automationFieldId && t.jira?.[automationFieldId]) {
+      const fieldVal = t.jira[automationFieldId] as { value?: string };
+      automationStatus = fieldVal.value;
+    }
+
+    return {
+      issueId: t.issueId,
+      key: t.jira?.key || '',
+      summary: t.jira?.summary || '',
+      description: extractDescription(t.jira?.description),
+      testType: t.testType?.name || 'Manual',
+      priority: t.jira?.priority?.name || 'Medium',
+      labels: t.jira?.labels || [],
+      steps: (t.steps || []).map((s) => ({
+        id: s.id,
+        action: s.action || '',
+        data: s.data || '',
+        result: s.result || '',
+      })),
+      automationStatus,
+    };
+  });
 }
 
 // ============ Update Existing Test ============
@@ -1532,7 +1675,15 @@ export async function updateExistingTest(draft: Draft): Promise<ImportResult> {
     const token = await getToken(config);
     const projectKey = draft.projectKey;
     const projectSettings = getProjectSettings(projectKey);
-    const automationFieldId = projectSettings.automationStatusFieldId;
+    let automationFieldId = projectSettings.automationStatusFieldId;
+
+    // Auto-detect if not configured and draft has automation status
+    if (!automationFieldId && draft.automationStatus) {
+      const detected = await detectAutomationFieldId(projectKey);
+      if (detected) {
+        automationFieldId = detected;
+      }
+    }
 
     // Use bulk import endpoint with the existing test key to trigger an update
     const fields: BulkImportPayload['fields'] = {

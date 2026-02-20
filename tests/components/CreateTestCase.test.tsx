@@ -795,6 +795,59 @@ describe('CreateTestCase', () => {
       expect(screen.getByText('WCP-7069')).toBeInTheDocument();
     });
 
+    it('propagates automationStatus from reusable TC to Automation Status dropdown', async () => {
+      const user = userEvent.setup();
+
+      // Override by-prefix endpoint to return a test with automationStatus
+      server.use(
+        http.get('*/api/xray/tests/by-prefix/:projectKey', () => {
+          return HttpResponse.json([
+            {
+              issueId: '99001',
+              key: 'WCP-9999',
+              summary: 'Organization | UI | REUSE Login Test',
+              description: 'Login test description',
+              testType: 'Manual',
+              priority: 'High',
+              labels: ['Regression'],
+              steps: [
+                { id: 'step-1', action: 'Open login page', data: '', result: 'Login page is displayed' },
+              ],
+              automationStatus: 'In Progress',
+            },
+          ]);
+        }),
+      );
+
+      renderCreateTestCase();
+      await selectReusableTC(user);
+
+      // Find the Automation Status dropdown and check its value
+      const selects = screen.getAllByRole('combobox');
+      const autoSelect = selects.find(s => {
+        const options = Array.from(s.querySelectorAll('option'));
+        return options.some(o => o.textContent === 'Planned For Automation');
+      });
+      expect(autoSelect).toBeDefined();
+      expect(autoSelect).toHaveValue('In Progress');
+    });
+
+    it('defaults automationStatus to empty when reusable TC has no automationStatus', async () => {
+      const user = userEvent.setup();
+
+      renderCreateTestCase();
+      await selectReusableTC(user);
+
+      // The mock data in beforeEach has no automationStatus field
+      const selects = screen.getAllByRole('combobox');
+      const autoSelect = selects.find(s => {
+        const options = Array.from(s.querySelectorAll('option'));
+        return options.some(o => o.textContent === 'Planned For Automation');
+      });
+      expect(autoSelect).toBeDefined();
+      expect(autoSelect).toHaveValue('');
+    });
+
     it('preserves default folder path when links have no folder', async () => {
       const user = userEvent.setup();
 

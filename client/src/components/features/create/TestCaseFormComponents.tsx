@@ -182,14 +182,7 @@ export function Step1BasicInfo({ draft, updateDraft, errors, projectSettings, on
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-1">
           <label className="block text-sm font-medium text-text-primary">Test Type</label>
-          <select
-            value={draft.testType}
-            onChange={e => updateDraft({ testType: e.target.value as 'Manual' | 'Automated' })}
-            className="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-          >
-            <option value="Manual">Manual</option>
-            <option value="Automated">Automated</option>
-          </select>
+          <div className="px-3 py-2 bg-sidebar rounded-lg text-text-secondary text-sm">{draft.testType}</div>
         </div>
         <div className="space-y-1">
           <label className="block text-sm font-medium text-text-primary">Priority</label>

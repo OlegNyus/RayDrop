@@ -483,7 +483,8 @@ router.get('/preconditions/:issueId/tests', async (req: Request, res: Response) 
 router.get('/tests/:issueId', async (req: Request, res: Response) => {
   try {
     const { issueId } = req.params;
-    const test = await getTestDetails(issueId);
+    const projectKey = req.query.projectKey as string | undefined;
+    const test = await getTestDetails(issueId, projectKey);
     return res.json(test);
   } catch (error) {
     console.error('Error fetching test details:', error);
