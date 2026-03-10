@@ -305,6 +305,11 @@ export function TestCasesList() {
         const result = draft.isReusable
           ? await xrayApi.updateTest(draft.id)
           : await xrayApi.import([draft.id], draft.projectKey);
+
+        if (!result.success) {
+          throw new Error(result.error || 'Import failed');
+        }
+
         const testKey = result.testKeys?.[0];
         const testIssueId = result.testIssueIds?.[0];
 
