@@ -94,7 +94,7 @@ interface BulkImportPayload {
     data: string;
     result: string;
   }>;
-  update_key?: string;
+  key?: string;
 }
 
 // Code detection for Xray export formatting
@@ -160,7 +160,7 @@ function formatDataForXray(data: string): string {
   return `{code:${language}}\n${data}\n{code}`;
 }
 
-const AUTOMATION_STATUS_VALUES = ['Manual', 'Planned For Automation', 'In Progress', 'Automated', 'Maintenance'];
+const AUTOMATION_STATUS_VALUES = ['Manual', 'Planned for Automation', 'In Progress', 'Automated', 'Maintenance'];
 
 export async function detectAutomationFieldId(projectKey: string): Promise<string | null> {
   // Scan custom fields on existing tests to find the Automation Status field
@@ -397,6 +397,7 @@ export async function getJobStatus(jobId: string, maxAttempts = 30, intervalMs =
       });
 
       const { status, result } = response.data;
+      console.log(`Job ${jobId} poll attempt ${attempt + 1}/${maxAttempts}: status="${status}"`);
 
       if (status === 'successful') {
         const issues = result?.issues || result?.createdIssues || [];
@@ -410,16 +411,16 @@ export async function getJobStatus(jobId: string, maxAttempts = 30, intervalMs =
         };
       }
 
-      if (status === 'failed') {
+      if (status === 'failed' || status === 'unsuccessful') {
         const errorMessage = result?.error ||
           result?.message ||
           result?.errors?.join(', ') ||
           (typeof result === 'string' ? result : JSON.stringify(result)) ||
           'Import job failed';
-        console.error('Xray import job failed:', response.data);
+        console.error(`Xray import job ${status}:`, JSON.stringify(response.data, null, 2));
         return {
           success: false,
-          status: 'failed',
+          status,
           error: errorMessage,
           details: result,
         };
@@ -435,6 +436,7 @@ export async function getJobStatus(jobId: string, maxAttempts = 30, intervalMs =
     }
   }
 
+  console.error(`Job ${jobId} polling timed out after ${maxAttempts} attempts (${maxAttempts * intervalMs / 1000}s)`);
   return {
     success: false,
     error: 'Job status polling timed out',
@@ -1689,7 +1691,7 @@ export async function updateExistingTest(draft: Draft): Promise<ImportResult> {
     const payload: BulkImportPayload[] = [{
       testtype: draft.testType || 'Manual',
       fields,
-      update_key: draft.sourceTestKey,
+      key: draft.sourceTestKey,
       steps: (draft.steps || []).map((step) => ({
         action: step.action || '',
         data: formatDataForXray(step.data || ''),
@@ -1706,8 +1708,8 @@ export async function updateExistingTest(draft: Draft): Promise<ImportResult> {
     });
 
     if (response.data?.jobId) {
-      // Poll for job completion
-      const jobResult = await getJobStatus(response.data.jobId);
+      // Poll for job completion — updates can take longer than new imports
+      const jobResult = await getJobStatus(response.data.jobId, 60, 3000);
 
       if (!jobResult.success) {
         return {

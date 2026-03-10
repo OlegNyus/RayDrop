@@ -207,7 +207,7 @@ export function Step1BasicInfo({ draft, updateDraft, errors, projectSettings, on
           >
             <option value="">Not Set</option>
             <option value="Manual">Manual</option>
-            <option value="Planned For Automation">Planned For Automation</option>
+            <option value="Planned for Automation">Planned for Automation</option>
             <option value="In Progress">In Progress</option>
             <option value="Automated">Automated</option>
             <option value="Maintenance">Maintenance</option>
