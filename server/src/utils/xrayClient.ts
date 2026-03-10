@@ -412,9 +412,14 @@ export async function getJobStatus(jobId: string, maxAttempts = 30, intervalMs =
       }
 
       if (status === 'failed' || status === 'unsuccessful') {
+        const errors = Array.isArray(result?.errors)
+          ? result.errors.map((e: { message?: string; errors?: Record<string, string> }) =>
+              e.message || (e.errors ? Object.values(e.errors).join(', ') : JSON.stringify(e))
+            ).join('; ')
+          : undefined;
         const errorMessage = result?.error ||
           result?.message ||
-          result?.errors?.join(', ') ||
+          errors ||
           (typeof result === 'string' ? result : JSON.stringify(result)) ||
           'Import job failed';
         console.error(`Xray import job ${status}:`, JSON.stringify(response.data, null, 2));
