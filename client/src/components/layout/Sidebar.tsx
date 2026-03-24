@@ -192,6 +192,10 @@ const xrayNavItems: NavItemConfig[] = [
   { path: '/preconditions', label: 'Preconditions', icon: '⚡' },
 ];
 
+const analysisNavItems: NavItemConfig[] = [
+  { path: '/coverage', label: 'Coverage', icon: '📈' },
+];
+
 export function Sidebar() {
   const { settings, activeProject, setActiveProject, isConfigured, reviewCounts } = useApp();
   const { theme, toggleTheme } = useTheme();
@@ -269,6 +273,15 @@ export function Sidebar() {
             Xray Entities
           </p>
           {xrayNavItems.map(item => (
+            <SidebarLink key={item.path} item={item} />
+          ))}
+        </div>
+
+        <div className="pt-4 border-t border-sidebar-border">
+          <p className="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
+            Analysis
+          </p>
+          {analysisNavItems.map(item => (
             <SidebarLink key={item.path} item={item} />
           ))}
         </div>

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { readConfig, writeConfig, getProjectSettings, saveProjectSettings } from './fileOperations.js';
+import type { CoverageTestCase } from './fileOperations.js';
 import type { Config, XrayEntity, FolderNode, ImportResult, ValidationResult, Draft, TestWithDetails } from '../types.js';
 
 const XRAY_AUTH_URL = 'https://xray.cloud.getxray.app/api/v2/authenticate';
@@ -1652,6 +1653,107 @@ export async function getTestsByPrefix(projectKey: string, prefix: string): Prom
       automationStatus,
     };
   });
+}
+
+// ============ Get Tests from Folder (Coverage) ============
+
+export async function getTestsFromFolder(projectId: string, folderPath: string, projectKey: string): Promise<CoverageTestCase[]> {
+  const projectSettings = getProjectSettings(projectKey);
+  const automationFieldId = projectSettings.automationStatusFieldId;
+  const jiraFields = ['key', 'summary', 'description', 'priority', 'labels'];
+  if (automationFieldId) {
+    jiraFields.push(automationFieldId);
+  }
+
+  const query = `
+    query GetTests($projectId: String!, $folderPath: String!, $limit: Int!, $start: Int!) {
+      getTests(projectId: $projectId, folder: { path: $folderPath }, limit: $limit, start: $start) {
+        total
+        start
+        limit
+        results {
+          issueId
+          testType {
+            name
+          }
+          steps {
+            id
+            action
+            data
+            result
+          }
+          jira(fields: [${jiraFields.map(f => `"${f}"`).join(', ')}])
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTests: {
+      total: number;
+      start: number;
+      limit: number;
+      results: Array<{
+        issueId: string;
+        testType?: { name: string };
+        steps?: Array<{ id: string; action: string; data: string; result: string }>;
+        jira?: Record<string, unknown> & {
+          key: string;
+          summary: string;
+          description: unknown;
+          priority?: { name: string };
+          labels?: string[];
+        };
+      }>;
+    };
+  }
+
+  const allTests: CoverageTestCase[] = [];
+  const PAGE_SIZE = 100;
+  let start = 0;
+  let total = 0;
+
+  do {
+    const data = await executeGraphQL<Result>(query, {
+      projectId,
+      folderPath,
+      limit: PAGE_SIZE,
+      start,
+    });
+
+    total = data.getTests.total;
+
+    for (const t of data.getTests.results) {
+      let automationStatus = 'Manual';
+      if (automationFieldId && t.jira?.[automationFieldId]) {
+        const fieldVal = t.jira[automationFieldId] as { value?: string };
+        if (fieldVal.value) {
+          automationStatus = fieldVal.value;
+        }
+      }
+
+      allTests.push({
+        key: t.jira?.key || '',
+        issueId: t.issueId,
+        folderPath,
+        summary: t.jira?.summary || '',
+        description: extractDescription(t.jira?.description),
+        testType: t.testType?.name || 'Manual',
+        priority: t.jira?.priority?.name || 'Medium',
+        automation_status: automationStatus,
+        labels: t.jira?.labels || [],
+        steps: (t.steps || []).map((s) => ({
+          action: s.action || '',
+          data: s.data || '',
+          result: s.result || '',
+        })),
+      });
+    }
+
+    start += PAGE_SIZE;
+  } while (start < total);
+
+  return allTests;
 }
 
 // ============ Update Existing Test ============

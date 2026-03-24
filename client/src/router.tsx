@@ -10,6 +10,7 @@ import { XrayEntityPage } from './components/features/xray/XrayEntityPage';
 import { XrayTestView } from './components/features/xray/XrayTestView';
 import { XrayPreconditionView } from './components/features/xray/XrayPreconditionView';
 import { TCReviewPage } from './components/features/review/TCReviewPage';
+import { CoveragePage } from './components/features/coverage/CoveragePage';
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
       { path: 'test-plans', element: <XrayEntityPage type="test-plans" /> },
       { path: 'test-executions', element: <XrayEntityPage type="test-executions" /> },
       { path: 'preconditions', element: <XrayEntityPage type="preconditions" /> },
+      { path: 'coverage', element: <CoveragePage /> },
       { path: 'xray/test/:issueId', element: <XrayTestView /> },
       { path: 'xray/precondition/:issueId', element: <XrayPreconditionView /> },
       { path: 'settings', element: <SettingsPage /> },
