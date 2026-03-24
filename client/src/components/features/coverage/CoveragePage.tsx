@@ -3,7 +3,7 @@ import { useApp } from '../../../context/AppContext';
 import { xrayApi, coverageApi } from '../../../services/api';
 import type { FolderNode } from '../../../services/api';
 import { Card } from '../../ui';
-import type { CoverageTestCase, SnapshotMetadata } from '../../../types';
+import type { CoverageTestCase } from '../../../types';
 
 type SyncState = 'not-synced' | 'synced' | 'syncing' | 'error';
 
