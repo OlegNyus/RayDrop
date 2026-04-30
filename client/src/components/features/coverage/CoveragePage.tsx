@@ -411,7 +411,11 @@ export function CoveragePage() {
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-text-secondary">Test cases synced</span>
-                  <span className="text-text-primary font-medium tabular-nums">{totalTestCasesSynced}</span>
+                  {syncingAll ? (
+                    <span className="text-accent text-[10px] animate-pulse">syncing...</span>
+                  ) : (
+                    <span className="text-text-primary font-medium tabular-nums">{totalTestCasesSynced}</span>
+                  )}
                 </div>
                 {failedCount > 0 && (
                   <div className="flex items-center justify-between text-xs">
