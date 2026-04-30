@@ -3,6 +3,7 @@ mockup/
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Documentation (local only)
 docs/
@@ -35,9 +36,14 @@ npm-debug.log*
 # User data (server storage)
 config/
 testCases/
+xray-snapshots/
+
+# Dev state (qa-studio)
+.dev/
 
 # Test coverage and results
-coverage/
+/coverage/
+server/coverage/
 test-results/
 playwright-report/
 .nyc_output/

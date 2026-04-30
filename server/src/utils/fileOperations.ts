@@ -286,6 +286,138 @@ export function removeProject(projectKey: string): { success: boolean } {
   return { success: true };
 }
 
+// ============ Coverage Snapshot Functions ============
+
+export const SNAPSHOTS_DIR = path.join(PROJECT_ROOT, 'xray-snapshots');
+
+export interface CoverageTestCase {
+  key: string;
+  issueId: string;
+  folderPath: string;
+  summary: string;
+  description: string;
+  testType: string;
+  priority: string;
+  automation_status: string;
+  labels: string[];
+  steps: Array<{ action: string; data: string; result: string }>;
+}
+
+export interface SnapshotMetadata {
+  folderPath: string;
+  lastSyncedAt: string;
+  testCount: number;
+}
+
+export function slugifyFolderPath(folderPath: string): string {
+  return folderPath
+    .toLowerCase()
+    .replace(/^\//, '')
+    .replace(/\//g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'root';
+}
+
+function getSnapshotDir(projectKey: string, folderPath: string): string {
+  const slug = slugifyFolderPath(folderPath);
+  return path.join(SNAPSHOTS_DIR, projectKey, slug);
+}
+
+export function saveSnapshot(projectKey: string, folderPath: string, testCases: CoverageTestCase[]): SnapshotMetadata {
+  const dir = getSnapshotDir(projectKey, folderPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(path.join(dir, 'tests.json'), JSON.stringify(testCases, null, 2));
+
+  const metadata: SnapshotMetadata = {
+    folderPath,
+    lastSyncedAt: new Date().toISOString(),
+    testCount: testCases.length,
+  };
+  fs.writeFileSync(path.join(dir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+
+  return metadata;
+}
+
+export function loadSnapshot(projectKey: string, folderPath: string): { tests: CoverageTestCase[]; metadata: SnapshotMetadata } | null {
+  const dir = getSnapshotDir(projectKey, folderPath);
+  const testsPath = path.join(dir, 'tests.json');
+  const metaPath = path.join(dir, 'metadata.json');
+
+  if (!fs.existsSync(testsPath) || !fs.existsSync(metaPath)) {
+    return null;
+  }
+
+  try {
+    const tests = JSON.parse(fs.readFileSync(testsPath, 'utf8')) as CoverageTestCase[];
+    const metadata = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as SnapshotMetadata;
+    return { tests, metadata };
+  } catch {
+    return null;
+  }
+}
+
+export function listSnapshotStatuses(projectKey: string): SnapshotMetadata[] {
+  const projectDir = path.join(SNAPSHOTS_DIR, projectKey);
+  if (!fs.existsSync(projectDir)) {
+    return [];
+  }
+
+  const statuses: SnapshotMetadata[] = [];
+  const folders = fs.readdirSync(projectDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name);
+
+  for (const folder of folders) {
+    const metaPath = path.join(projectDir, folder, 'metadata.json');
+    if (fs.existsSync(metaPath)) {
+      try {
+        const metadata = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as SnapshotMetadata;
+        statuses.push(metadata);
+      } catch {
+        // Skip invalid metadata
+      }
+    }
+  }
+
+  return statuses;
+}
+
+export function loadAllSnapshotTests(projectKey: string, folderPath?: string): CoverageTestCase[] {
+  if (folderPath) {
+    const snapshot = loadSnapshot(projectKey, folderPath);
+    return snapshot ? snapshot.tests : [];
+  }
+
+  const projectDir = path.join(SNAPSHOTS_DIR, projectKey);
+  if (!fs.existsSync(projectDir)) {
+    return [];
+  }
+
+  const allTests: CoverageTestCase[] = [];
+  const folders = fs.readdirSync(projectDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name);
+
+  for (const folder of folders) {
+    const testsPath = path.join(projectDir, folder, 'tests.json');
+    if (fs.existsSync(testsPath)) {
+      try {
+        const tests = JSON.parse(fs.readFileSync(testsPath, 'utf8')) as CoverageTestCase[];
+        allTests.push(...tests);
+      } catch {
+        // Skip invalid files
+      }
+    }
+  }
+
+  return allTests;
+}
+
 // ============ Draft Functions ============
 
 export function getDraftPath(projectKey: string, area: string, title: string, id: string): string {

@@ -165,6 +165,31 @@ export interface TestLinks {
   folder?: string;
 }
 
+// Coverage snapshot types
+export interface CoverageTestCase {
+  key: string;
+  issueId: string;
+  folderPath: string;
+  summary: string;
+  description: string;
+  testType: string;
+  priority: string;
+  automation_status: string;
+  labels: string[];
+  steps: Array<{ action: string; data: string; result: string }>;
+}
+
+export interface SnapshotMetadata {
+  folderPath: string;
+  lastSyncedAt: string;
+  testCount: number;
+}
+
+export interface CoverageSnapshot {
+  tests: CoverageTestCase[];
+  metadata: SnapshotMetadata;
+}
+
 // Test with detailed Jira fields (for TC Review page)
 export interface TestWithDetails {
   issueId: string;

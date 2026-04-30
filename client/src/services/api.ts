@@ -1,4 +1,4 @@
-import type { Config, ConfigInput, Settings, ProjectSettings, Draft, XrayEntity, ImportResult, TestWithDetails, TestDetails, TestLinks } from '../types';
+import type { Config, ConfigInput, Settings, ProjectSettings, Draft, XrayEntity, ImportResult, TestWithDetails, TestDetails, TestLinks, CoverageTestCase, CoverageSnapshot, SnapshotMetadata } from '../types';
 
 const API_BASE = '/api';
 
@@ -128,7 +128,7 @@ export async function saveLabels(labels: string[]): Promise<{ success: boolean }
 }
 
 // Folder type from Xray (nested structure)
-interface FolderNode {
+export interface FolderNode {
   name: string;
   path: string;
   testsCount?: number;
@@ -259,4 +259,21 @@ export const xrayApi = {
       return { folders: [], projectId: '' };
     }
   },
+};
+
+// Coverage API
+export const coverageApi = {
+  syncFolder: (projectId: string, folderPath: string, projectKey: string) =>
+    request<CoverageSnapshot>('/xray/coverage/sync', {
+      method: 'POST',
+      body: JSON.stringify({ projectId, folderPath, projectKey }),
+    }),
+  getSnapshot: (projectKey: string, folderPath: string) =>
+    request<CoverageSnapshot | null>(`/xray/coverage/snapshot?projectKey=${encodeURIComponent(projectKey)}&folderPath=${encodeURIComponent(folderPath)}`),
+  getSnapshotStatuses: (projectKey: string) =>
+    request<SnapshotMetadata[]>(`/xray/coverage/snapshots?projectKey=${encodeURIComponent(projectKey)}`),
+  exportAll: (projectKey: string) =>
+    request<CoverageTestCase[]>(`/xray/coverage/export?projectKey=${encodeURIComponent(projectKey)}`),
+  exportFolder: (projectKey: string, folderPath: string) =>
+    request<CoverageTestCase[]>(`/xray/coverage/export?projectKey=${encodeURIComponent(projectKey)}&folderPath=${encodeURIComponent(folderPath)}`),
 };

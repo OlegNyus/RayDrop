@@ -28,8 +28,16 @@ import {
   getTestsByStatus,
   getTestsByPrefix,
   updateExistingTest,
+  getTestsFromFolder,
 } from '../utils/xrayClient.js';
-import { readDraft, writeDraft } from '../utils/fileOperations.js';
+import {
+  readDraft,
+  writeDraft,
+  saveSnapshot,
+  loadSnapshot,
+  listSnapshotStatuses,
+  loadAllSnapshotTests,
+} from '../utils/fileOperations.js';
 import type { Draft } from '../types.js';
 
 const router = Router();
@@ -1091,6 +1099,77 @@ router.delete('/tests/:testIssueId/remove-preconditions', async (req: Request, r
   } catch (error) {
     console.error('Error removing preconditions from test:', error);
     return res.status(500).json({ error: 'Failed to remove preconditions from test' });
+  }
+});
+
+// ============ Coverage Endpoints ============
+
+router.post('/coverage/sync', async (req: Request, res: Response) => {
+  try {
+    const { projectId, folderPath, projectKey } = req.body;
+
+    if (!projectId || !folderPath || !projectKey) {
+      return res.status(400).json({ error: 'projectId, folderPath, and projectKey are required' });
+    }
+
+    const tests = await getTestsFromFolder(projectId, folderPath, projectKey);
+    const metadata = saveSnapshot(projectKey, folderPath, tests);
+    return res.json({ tests, metadata });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`Error syncing coverage folder ${req.body.folderPath}:`, msg);
+    return res.status(500).json({ error: `Failed to sync folder: ${msg}` });
+  }
+});
+
+router.get('/coverage/snapshot', async (req: Request, res: Response) => {
+  try {
+    const { projectKey, folderPath } = req.query;
+
+    if (!projectKey || !folderPath) {
+      return res.status(400).json({ error: 'projectKey and folderPath are required' });
+    }
+
+    const snapshot = loadSnapshot(projectKey as string, folderPath as string);
+    return res.json(snapshot);
+  } catch (error) {
+    console.error('Error loading snapshot:', error);
+    return res.status(500).json({ error: 'Failed to load snapshot' });
+  }
+});
+
+router.get('/coverage/snapshots', async (req: Request, res: Response) => {
+  try {
+    const { projectKey } = req.query;
+
+    if (!projectKey) {
+      return res.status(400).json({ error: 'projectKey is required' });
+    }
+
+    const statuses = listSnapshotStatuses(projectKey as string);
+    return res.json(statuses);
+  } catch (error) {
+    console.error('Error listing snapshot statuses:', error);
+    return res.status(500).json({ error: 'Failed to list snapshot statuses' });
+  }
+});
+
+router.get('/coverage/export', async (req: Request, res: Response) => {
+  try {
+    const { projectKey, folderPath } = req.query;
+
+    if (!projectKey) {
+      return res.status(400).json({ error: 'projectKey is required' });
+    }
+
+    const tests = loadAllSnapshotTests(
+      projectKey as string,
+      folderPath ? (folderPath as string) : undefined,
+    );
+    return res.json(tests);
+  } catch (error) {
+    console.error('Error exporting coverage:', error);
+    return res.status(500).json({ error: 'Failed to export coverage data' });
   }
 });
 

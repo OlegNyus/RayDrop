@@ -180,6 +180,35 @@ describe('Sidebar', () => {
     });
   });
 
+  describe('Analysis Section', () => {
+    it('AC-COV-072: renders Analysis section header', async () => {
+      renderWithRouter(<Sidebar />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Analysis')).toBeInTheDocument();
+      });
+    });
+
+    it('AC-COV-072: renders Coverage link', async () => {
+      renderWithRouter(<Sidebar />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Coverage')).toBeInTheDocument();
+      });
+    });
+
+    it('AC-COV-073: Coverage link has correct path', async () => {
+      renderWithRouter(<Sidebar />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Coverage')).toBeInTheDocument();
+      });
+
+      const coverageLink = screen.getByText('Coverage').closest('a');
+      expect(coverageLink).toHaveAttribute('href', '/coverage');
+    });
+  });
+
   describe('Test Review Section', () => {
     it('renders Test Review header', async () => {
       renderWithRouter(<Sidebar />);
