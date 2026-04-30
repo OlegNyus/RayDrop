@@ -1116,8 +1116,9 @@ router.post('/coverage/sync', async (req: Request, res: Response) => {
     const metadata = saveSnapshot(projectKey, folderPath, tests);
     return res.json({ tests, metadata });
   } catch (error) {
-    console.error('Error syncing coverage folder:', error);
-    return res.status(500).json({ error: 'Failed to sync folder from Xray' });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`Error syncing coverage folder ${req.body.folderPath}:`, msg);
+    return res.status(500).json({ error: `Failed to sync folder: ${msg}` });
   }
 });
 

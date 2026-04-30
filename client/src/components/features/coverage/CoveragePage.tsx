@@ -29,7 +29,6 @@ function slugifyPath(p: string): string {
   return p.toLowerCase().replace(/^\//, '').replace(/\//g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
 }
 
-// Count all leaf folders in tree
 function countFolders(nodes: FolderNode[]): number {
   let count = 0;
   for (const n of nodes) {
@@ -39,12 +38,20 @@ function countFolders(nodes: FolderNode[]): number {
   return count;
 }
 
-// Collect all folder paths for Sync All
-function collectPaths(nodes: FolderNode[]): string[] {
+function countLeafFolders(nodes: FolderNode[]): number {
+  let count = 0;
+  for (const n of nodes) {
+    if (!n.folders?.length) count++;
+    else count += countLeafFolders(n.folders);
+  }
+  return count;
+}
+
+function collectLeafPaths(nodes: FolderNode[]): string[] {
   const paths: string[] = [];
   for (const n of nodes) {
-    paths.push(n.path);
-    if (n.folders?.length) paths.push(...collectPaths(n.folders));
+    if (!n.folders?.length) paths.push(n.path);
+    else paths.push(...collectLeafPaths(n.folders));
   }
   return paths;
 }
@@ -189,7 +196,7 @@ export function CoveragePage() {
     if (!activeProject || !projectId || syncingAll) return;
     setSyncingAll(true);
 
-    const allPaths = collectPaths(folderTree);
+    const allPaths = collectLeafPaths(folderTree);
     let success = 0;
     let failed = 0;
 
@@ -275,6 +282,7 @@ export function CoveragePage() {
 
   // Counts
   const totalFolders = useMemo(() => countFolders(folderTree), [folderTree]);
+  const leafFolderCount = useMemo(() => countLeafFolders(folderTree), [folderTree]);
   const syncedCount = useMemo(() => {
     let count = 0;
     syncMap.forEach(v => { if (v.state === 'synced') count++; });
@@ -291,7 +299,7 @@ export function CoveragePage() {
     syncMap.forEach(v => { if (v.state === 'synced' && v.testCount) count += v.testCount; });
     return count;
   }, [syncMap]);
-  const syncProgress = totalFolders > 0 ? Math.round((syncedCount / totalFolders) * 100) : 0;
+  const syncProgress = leafFolderCount > 0 ? Math.round((syncedCount / leafFolderCount) * 100) : 0;
 
   const selectedSyncInfo = selectedFolder ? getSyncInfo(selectedFolder) : undefined;
 
@@ -394,11 +402,11 @@ export function CoveragePage() {
               <div className="px-4 py-3 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-text-secondary">Xray folders</span>
-                  <span className="text-text-primary font-medium tabular-nums">{totalFolders}</span>
+                  <span className="text-text-primary font-medium tabular-nums">{leafFolderCount}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-text-secondary">Folders synced</span>
-                  <span className="text-text-primary font-medium tabular-nums">{syncedCount} / {totalFolders}</span>
+                  <span className="text-text-primary font-medium tabular-nums">{syncedCount} / {leafFolderCount}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-text-secondary">Test cases synced</span>
