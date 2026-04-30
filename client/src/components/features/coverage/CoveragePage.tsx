@@ -384,7 +384,7 @@ export function CoveragePage() {
             </div>
 
             {totalFolders > 0 && (
-              <div className="border-t border-border mt-auto" data-testid="coverage-sync-summary">
+              <div className="border-t-2 border-border mt-auto bg-sidebar/50" data-testid="coverage-sync-summary">
                 <div className="px-4 py-3 space-y-2.5">
                   <p className="text-xs font-semibold text-text-primary uppercase tracking-wider">Sync Summary</p>
                   <div className="space-y-1.5">
@@ -508,20 +508,11 @@ export function CoveragePage() {
                           <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-text-muted">No test cases match your search</td></tr>
                         ) : (
                           filteredTests.map(tc => (
-                            <tr key={tc.key} data-testid={`coverage-preview-row-${tc.key}`} className="border-b border-border last:border-b-0 hover:bg-sidebar-hover transition-colors group">
+                            <tr key={tc.key} data-testid={`coverage-preview-row-${tc.key}`} className="border-b border-border last:border-b-0 hover:bg-sidebar-hover transition-colors">
                               <td className="px-4 py-2.5 text-sm"><span className="text-accent font-medium">{tc.key}</span></td>
                               <td className="px-4 py-2.5 text-sm text-text-primary">{tc.summary}</td>
                               <td className="px-4 py-2.5"><PriorityBadge priority={tc.priority} /></td>
-                              <td className="px-4 py-2.5">
-                                <AutomationBadge status={tc.automation_status} />
-                                {tc.labels.length > 0 && (
-                                  <span className="hidden group-hover:inline-flex gap-1 ml-2">
-                                    {tc.labels.map(label => (
-                                      <span key={label} className="text-xs px-1.5 py-0.5 rounded bg-sidebar text-text-secondary whitespace-nowrap">{label}</span>
-                                    ))}
-                                  </span>
-                                )}
-                              </td>
+                              <td className="px-4 py-2.5"><AutomationBadge status={tc.automation_status} /></td>
                             </tr>
                           ))
                         )}
@@ -545,12 +536,6 @@ export function CoveragePage() {
             </div>
           )}
 
-          {selectedSyncInfo?.state === 'synced' && previewTests.length > 0 && (
-            <div className="mt-3 px-1 flex items-center gap-2 text-xs text-text-muted">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
-              <span>Hover a row to see labels</span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -712,10 +697,10 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 function AutomationBadge({ status }: { status: string }) {
   if (status === 'Automated') {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">{status}</span>;
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Automated</span>;
   }
   if (status === 'Planned for Automation') {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{status}</span>;
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Planned</span>;
   }
   return <span className="text-xs px-2 py-0.5 rounded-full bg-badge-bg text-badge-text">{status}</span>;
 }

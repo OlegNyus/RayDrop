@@ -307,7 +307,7 @@ describe('CoveragePage', () => {
       fireEvent.click(screen.getByText('Login'));
 
       await waitFor(() => {
-        expect(screen.getByText('Planned for Automation')).toBeInTheDocument();
+        expect(screen.getByText('Planned')).toBeInTheDocument();
         expect(screen.getByText('Automated')).toBeInTheDocument();
       });
     });

@@ -190,7 +190,7 @@ test.describe('Coverage Page — User Journey', () => {
 
     await expect(table.getByText('High').first()).toBeVisible();
     await expect(table.getByText('Medium')).toBeVisible();
-    await expect(table.getByText('Planned for Automation')).toBeVisible();
+    await expect(table.getByText('Planned')).toBeVisible();
     await expect(table.getByText('Automated')).toBeVisible();
     await expect(table.getByText('Manual', { exact: true })).toBeVisible();
   });
