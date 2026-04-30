@@ -50,3 +50,4 @@ playwright-report/
 
 # Playwright MCP
 .playwright-mcp/
+e2e/coverage/
