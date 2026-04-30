@@ -62,6 +62,7 @@ export function CoveragePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [syncingAll, setSyncingAll] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [lastFullSync, setLastFullSync] = useState<string | null>(null);
 
   // Sync status per folder path
   const [syncMap, setSyncMap] = useState<Map<string, SyncInfo>>(new Map());
@@ -199,10 +200,11 @@ export function CoveragePage() {
     }
 
     setSyncingAll(false);
-    if (failed > 0) {
-      showToast(`Synced ${success}/${allPaths.length} folders. ${failed} failed.`, 'info');
-    } else {
+    if (failed === 0) {
+      setLastFullSync(new Date().toISOString());
       showToast(`Synced ${success}/${allPaths.length} folders.`, 'success');
+    } else {
+      showToast(`Synced ${success}/${allPaths.length} folders. ${failed} failed.`, 'info');
     }
   }, [activeProject, projectId, syncingAll, folderTree, syncFolder, showToast]);
 
@@ -251,13 +253,14 @@ export function CoveragePage() {
     }
   }, [activeProject, downloadJson, showToast]);
 
-  const downloadAll = useCallback(async () => {
+  const exportJson = useCallback(async () => {
     if (!activeProject) return;
     try {
       const tests = await coverageApi.exportAll(activeProject);
       downloadJson(tests, `${activeProject}-coverage.json`);
+      showToast(`Exported ${tests.length} test cases`, 'success');
     } catch {
-      showToast('Failed to download', 'error');
+      showToast('Failed to export', 'error');
     }
   }, [activeProject, downloadJson, showToast]);
 
@@ -278,6 +281,17 @@ export function CoveragePage() {
     return count;
   }, [syncMap]);
   const hasSynced = syncedCount > 0;
+  const failedCount = useMemo(() => {
+    let count = 0;
+    syncMap.forEach(v => { if (v.state === 'error') count++; });
+    return count;
+  }, [syncMap]);
+  const totalTestCasesSynced = useMemo(() => {
+    let count = 0;
+    syncMap.forEach(v => { if (v.state === 'synced' && v.testCount) count += v.testCount; });
+    return count;
+  }, [syncMap]);
+  const syncProgress = totalFolders > 0 ? Math.round((syncedCount / totalFolders) * 100) : 0;
 
   const selectedSyncInfo = selectedFolder ? getSyncInfo(selectedFolder) : undefined;
 
@@ -300,7 +314,7 @@ export function CoveragePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Coverage</h1>
-          <p className="text-sm text-text-secondary mt-1">Sync and export Xray test cases by folder</p>
+          <p className="text-sm text-text-secondary mt-1">Sync Xray test cases by folder</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -317,18 +331,6 @@ export function CoveragePage() {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             )}
             {syncingAll ? 'Syncing...' : 'Sync All'}
-          </button>
-          <button
-            data-testid="coverage-download-all-btn"
-            onClick={downloadAll}
-            disabled={!hasSynced}
-            title={!hasSynced ? 'Sync at least one folder first' : undefined}
-            className={`px-4 py-2 text-sm font-medium rounded-lg bg-card text-text-primary border border-border transition-colors flex items-center gap-2 ${
-              !hasSynced ? 'opacity-50 cursor-not-allowed' : 'hover:bg-sidebar-hover'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Download All
           </button>
         </div>
       </div>
@@ -382,17 +384,45 @@ export function CoveragePage() {
             </div>
 
             {totalFolders > 0 && (
-              <div className="px-4 py-3 border-t border-border flex items-center gap-4 text-xs text-text-muted">
-                {syncedCount > 0 && (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-success" /> {syncedCount} synced
-                  </span>
-                )}
-                {totalFolders - syncedCount > 0 && (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-600" /> {totalFolders - syncedCount} not synced
-                  </span>
-                )}
+              <div className="border-t border-border mt-auto" data-testid="coverage-sync-summary">
+                <div className="px-4 py-3 space-y-2.5">
+                  <p className="text-xs font-semibold text-text-primary uppercase tracking-wider">Sync Summary</p>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-text-secondary">Xray folders</span>
+                      <span className="text-text-primary font-medium tabular-nums">{totalFolders}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-text-secondary">Folders synced</span>
+                      <span className="text-text-primary font-medium tabular-nums">{syncedCount} / {totalFolders}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-text-secondary">Test cases synced</span>
+                      <span className="text-text-primary font-medium tabular-nums">{totalTestCasesSynced}</span>
+                    </div>
+                    {failedCount > 0 && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-text-secondary">Failed</span>
+                        <span className="text-error font-medium tabular-nums">{failedCount}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="w-full h-1.5 bg-sidebar rounded-full overflow-hidden">
+                    <div className="h-full bg-success rounded-full transition-all" style={{ width: `${syncProgress}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-text-muted">
+                    <span>{lastFullSync ? `Last full sync: ${formatRelativeTime(lastFullSync)}` : 'Last full sync: never'}</span>
+                    {hasSynced && (
+                      <button
+                        onClick={exportJson}
+                        className="text-accent hover:underline"
+                        data-testid="coverage-export-json-btn"
+                      >
+                        Export JSON
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -537,6 +567,7 @@ export function CoveragePage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

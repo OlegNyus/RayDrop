@@ -169,34 +169,33 @@ describe('CoveragePage', () => {
       expect(screen.getByText('Signup')).toBeInTheDocument();
     });
 
-    it('AC-COV-005: shows folder count badge', async () => {
+    it('AC-COV-005: shows folder count in sync summary', async () => {
       setupConfiguredHandlers();
       renderWithRouter(<CoveragePage />);
 
       await waitFor(() => {
-        // 3 folders total (WCP, Login, Signup)
-        expect(screen.getByText('3')).toBeInTheDocument();
+        expect(screen.getByTestId('coverage-sync-summary')).toBeInTheDocument();
+        expect(screen.getByText('0 / 3')).toBeInTheDocument();
       });
     });
   });
 
   describe('AC-COV-003/004: Sync status indicators', () => {
-    it('AC-COV-003: shows "not synced" count when no folders synced', async () => {
+    it('AC-COV-003: shows sync summary with 0 synced when no folders synced', async () => {
       setupConfiguredHandlers();
       renderWithRouter(<CoveragePage />);
 
       await waitFor(() => {
-        expect(screen.getByText(/3 not synced/)).toBeInTheDocument();
+        expect(screen.getByText('0 / 3')).toBeInTheDocument();
       });
     });
 
-    it('AC-COV-004: shows synced count when folders are synced', async () => {
+    it('AC-COV-004: shows synced count in sync summary when folders are synced', async () => {
       setupConfiguredWithSyncedFolder();
       renderWithRouter(<CoveragePage />);
 
       await waitFor(() => {
-        expect(screen.getByText(/1 synced/)).toBeInTheDocument();
-        expect(screen.getByText(/2 not synced/)).toBeInTheDocument();
+        expect(screen.getByText('1 / 3')).toBeInTheDocument();
       });
     });
   });
@@ -401,33 +400,38 @@ describe('CoveragePage', () => {
     });
   });
 
-  describe('AC-COV-057: Download All button state', () => {
-    it('disables Download All when no folders synced', async () => {
+  describe('Sync Summary panel', () => {
+    it('shows sync summary with folder and test case counts', async () => {
+      setupConfiguredWithSyncedFolder();
+      renderWithRouter(<CoveragePage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('coverage-sync-summary')).toBeInTheDocument();
+        expect(screen.getByText('Sync Summary')).toBeInTheDocument();
+        expect(screen.getByText('Xray folders')).toBeInTheDocument();
+        expect(screen.getByText('Folders synced')).toBeInTheDocument();
+        expect(screen.getByText('Test cases synced')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Export JSON link when folders are synced', async () => {
+      setupConfiguredWithSyncedFolder();
+      renderWithRouter(<CoveragePage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('coverage-export-json-btn')).toBeInTheDocument();
+      });
+    });
+
+    it('hides Export JSON link when no folders synced', async () => {
       setupConfiguredHandlers();
       renderWithRouter(<CoveragePage />);
 
       await waitFor(() => {
-        expect(screen.getByTestId('coverage-download-all-btn')).toBeInTheDocument();
+        expect(screen.getByTestId('coverage-sync-summary')).toBeInTheDocument();
       });
 
-      expect(screen.getByTestId('coverage-download-all-btn')).toBeDisabled();
-    });
-
-    it('AC-COV-058: enables Download All when at least one folder synced', async () => {
-      setupConfiguredWithSyncedFolder();
-      renderWithRouter(<CoveragePage />);
-
-      // Wait for folder tree to load (indicates snapshots statuses have been fetched)
-      await waitFor(() => {
-        expect(screen.getByText('Login')).toBeInTheDocument();
-      });
-
-      // Wait for synced count to appear (confirms syncMap is populated)
-      await waitFor(() => {
-        expect(screen.getByText(/1 synced/)).toBeInTheDocument();
-      });
-
-      expect(screen.getByTestId('coverage-download-all-btn')).not.toBeDisabled();
+      expect(screen.queryByTestId('coverage-export-json-btn')).not.toBeInTheDocument();
     });
   });
 
@@ -451,7 +455,7 @@ describe('CoveragePage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Coverage')).toBeInTheDocument();
-        expect(screen.getByText('Sync and export Xray test cases by folder')).toBeInTheDocument();
+        expect(screen.getByText('Sync Xray test cases by folder')).toBeInTheDocument();
       });
     });
   });
