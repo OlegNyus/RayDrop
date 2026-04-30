@@ -383,49 +383,51 @@ export function CoveragePage() {
               )}
             </div>
 
-            {totalFolders > 0 && (
-              <div className="border-t-2 border-border mt-auto bg-sidebar/50" data-testid="coverage-sync-summary">
-                <div className="px-4 py-3 space-y-2.5">
-                  <p className="text-xs font-semibold text-text-primary uppercase tracking-wider">Sync Summary</p>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-text-secondary">Xray folders</span>
-                      <span className="text-text-primary font-medium tabular-nums">{totalFolders}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-text-secondary">Folders synced</span>
-                      <span className="text-text-primary font-medium tabular-nums">{syncedCount} / {totalFolders}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-text-secondary">Test cases synced</span>
-                      <span className="text-text-primary font-medium tabular-nums">{totalTestCasesSynced}</span>
-                    </div>
-                    {failedCount > 0 && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-text-secondary">Failed</span>
-                        <span className="text-error font-medium tabular-nums">{failedCount}</span>
-                      </div>
-                    )}
+          </div>
+
+          {/* Sync Summary — separate card below folder tree */}
+          {totalFolders > 0 && (
+            <div className="mt-3 bg-card border border-border rounded-lg" data-testid="coverage-sync-summary">
+              <div className="px-4 py-3 border-b border-border">
+                <p className="text-xs font-semibold text-text-primary uppercase tracking-wider">Sync Summary</p>
+              </div>
+              <div className="px-4 py-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-secondary">Xray folders</span>
+                  <span className="text-text-primary font-medium tabular-nums">{totalFolders}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-secondary">Folders synced</span>
+                  <span className="text-text-primary font-medium tabular-nums">{syncedCount} / {totalFolders}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-secondary">Test cases synced</span>
+                  <span className="text-text-primary font-medium tabular-nums">{totalTestCasesSynced}</span>
+                </div>
+                {failedCount > 0 && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-text-secondary">Failed</span>
+                    <span className="text-error font-medium tabular-nums">{failedCount}</span>
                   </div>
-                  <div className="w-full h-1.5 bg-sidebar rounded-full overflow-hidden">
-                    <div className="h-full bg-success rounded-full transition-all" style={{ width: `${syncProgress}%` }} />
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-text-muted">
-                    <span>{lastFullSync ? `Last full sync: ${formatRelativeTime(lastFullSync)}` : 'Last full sync: never'}</span>
-                    {hasSynced && (
-                      <button
-                        onClick={exportJson}
-                        className="text-accent hover:underline"
-                        data-testid="coverage-export-json-btn"
-                      >
-                        Export JSON
-                      </button>
-                    )}
-                  </div>
+                )}
+                <div className="w-full h-1.5 bg-sidebar rounded-full overflow-hidden mt-1">
+                  <div className="h-full bg-success rounded-full transition-all" style={{ width: `${syncProgress}%` }} />
                 </div>
               </div>
-            )}
-          </div>
+              <div className="px-4 py-2.5 border-t border-border flex items-center justify-between text-[10px] text-text-muted">
+                <span>{lastFullSync ? `Last full sync: ${formatRelativeTime(lastFullSync)}` : 'Last full sync: never'}</span>
+                {hasSynced && (
+                  <button
+                    onClick={exportJson}
+                    className="text-accent hover:underline"
+                    data-testid="coverage-export-json-btn"
+                  >
+                    Export JSON
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Panel: Preview Table */}
