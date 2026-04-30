@@ -280,25 +280,26 @@ export function CoveragePage() {
     );
   }, [previewTests, searchQuery]);
 
-  // Counts
+  // Counts — only count leaf folders to avoid double-counting from parent syncs
   const totalFolders = useMemo(() => countFolders(folderTree), [folderTree]);
-  const leafFolderCount = useMemo(() => countLeafFolders(folderTree), [folderTree]);
+  const leafPaths = useMemo(() => new Set(collectLeafPaths(folderTree)), [folderTree]);
+  const leafFolderCount = leafPaths.size;
   const syncedCount = useMemo(() => {
     let count = 0;
-    syncMap.forEach(v => { if (v.state === 'synced') count++; });
+    syncMap.forEach((v, path) => { if (v.state === 'synced' && leafPaths.has(path)) count++; });
     return count;
-  }, [syncMap]);
+  }, [syncMap, leafPaths]);
   const hasSynced = syncedCount > 0;
   const failedCount = useMemo(() => {
     let count = 0;
-    syncMap.forEach(v => { if (v.state === 'error') count++; });
+    syncMap.forEach((v, path) => { if (v.state === 'error' && leafPaths.has(path)) count++; });
     return count;
-  }, [syncMap]);
+  }, [syncMap, leafPaths]);
   const totalTestCasesSynced = useMemo(() => {
     let count = 0;
-    syncMap.forEach(v => { if (v.state === 'synced' && v.testCount) count += v.testCount; });
+    syncMap.forEach((v, path) => { if (v.state === 'synced' && v.testCount && leafPaths.has(path)) count += v.testCount; });
     return count;
-  }, [syncMap]);
+  }, [syncMap, leafPaths]);
   const syncProgress = leafFolderCount > 0 ? Math.round((syncedCount / leafFolderCount) * 100) : 0;
 
   const selectedSyncInfo = selectedFolder ? getSyncInfo(selectedFolder) : undefined;
