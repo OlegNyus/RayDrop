@@ -47,11 +47,16 @@ function countLeafFolders(nodes: FolderNode[]): number {
   return count;
 }
 
-function collectLeafPaths(nodes: FolderNode[]): string[] {
+function collectLeafPaths(nodes: FolderNode[], projectKey?: string): string[] {
   const paths: string[] = [];
   for (const n of nodes) {
-    if (!n.folders?.length) paths.push(n.path);
-    else paths.push(...collectLeafPaths(n.folders));
+    if (!n.folders?.length) {
+      if (!projectKey || n.path.includes(`/${projectKey}`)) {
+        paths.push(n.path);
+      }
+    } else {
+      paths.push(...collectLeafPaths(n.folders, projectKey));
+    }
   }
   return paths;
 }
@@ -196,7 +201,7 @@ export function CoveragePage() {
     if (!activeProject || !projectId || syncingAll) return;
     setSyncingAll(true);
 
-    const allPaths = collectLeafPaths(folderTree);
+    const allPaths = collectLeafPaths(folderTree, activeProject);
     let success = 0;
     let failed = 0;
 
@@ -282,7 +287,7 @@ export function CoveragePage() {
 
   // Counts — only count leaf folders to avoid double-counting from parent syncs
   const totalFolders = useMemo(() => countFolders(folderTree), [folderTree]);
-  const leafPaths = useMemo(() => new Set(collectLeafPaths(folderTree)), [folderTree]);
+  const leafPaths = useMemo(() => new Set(collectLeafPaths(folderTree, activeProject ?? undefined)), [folderTree, activeProject]);
   const leafFolderCount = leafPaths.size;
   const syncedCount = useMemo(() => {
     let count = 0;
