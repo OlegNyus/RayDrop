@@ -248,7 +248,7 @@ test.describe('Coverage Page — User Journey', () => {
     await expect(page.getByText('Showing 1 of 3 test cases (filtered)')).toBeVisible();
 
     await page.getByTestId('coverage-preview-search-input').clear();
-    await expect(page.getByText('Showing 3 of 3 test cases')).toBeVisible();
+    await expect(page.getByText('3 test cases')).toBeVisible();
   });
 
   test('Sync All button triggers sync for all folders', async ({ page }) => {
@@ -320,14 +320,14 @@ test.describe('Coverage Page — User Journey', () => {
     await page.goto('/coverage');
 
     await expect(page.getByText('Analysis')).toBeVisible();
-    await expect(page.getByRole('link', { name: /Coverage/ })).toBeVisible();
+    await expect(page.getByTestId('sidebar-nav-coverage-link')).toBeVisible();
   });
 
   test('sidebar Coverage link navigates to /coverage', async ({ page }) => {
     await setupMockRoutes(page);
     await page.goto('/');
 
-    await page.getByRole('link', { name: /Coverage/ }).click();
+    await page.getByTestId('sidebar-nav-coverage-link').click();
 
     await expect(page).toHaveURL(/\/coverage/);
     await expect(page.getByTestId('coverage-page')).toBeVisible();
@@ -393,7 +393,7 @@ test.describe('Coverage Page — User Journey', () => {
     await page.goto('/coverage');
     await page.getByText('Login').click();
 
-    await expect(page.getByText('Showing 3 of 3 test cases')).toBeVisible();
+    await expect(page.getByText('3 test cases')).toBeVisible();
     await expect(page.getByText(/Last synced:/)).toBeVisible();
   });
 });

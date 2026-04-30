@@ -29,15 +29,6 @@ function slugifyPath(p: string): string {
   return p.toLowerCase().replace(/^\//, '').replace(/\//g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
 }
 
-function countFolders(nodes: FolderNode[]): number {
-  let count = 0;
-  for (const n of nodes) {
-    count++;
-    if (n.folders?.length) count += countFolders(n.folders);
-  }
-  return count;
-}
-
 function countLeafFolders(nodes: FolderNode[]): number {
   let count = 0;
   for (const n of nodes) {
@@ -120,6 +111,14 @@ export function CoveragePage() {
         }
         setSyncMap(map);
 
+        // Derive last full sync from stored snapshots
+        const leafSet = new Set(collectLeafPaths(rootFolder.folders || [], activeProject));
+        const allLeafsSynced = leafSet.size > 0 && [...leafSet].every(p => map.has(p));
+        if (allLeafsSynced) {
+          const oldest = Math.min(...[...leafSet].map(p => new Date(map.get(p)!.lastSyncedAt!).getTime()));
+          setLastFullSync(new Date(oldest).toISOString());
+        }
+
         // Auto-expand first level
         const firstLevel = new Set<string>();
         for (const node of rootFolder.folders || []) {
@@ -196,7 +195,6 @@ export function CoveragePage() {
     }
   }, [activeProject, projectId, selectedFolder, showToast]);
 
-  // Sync all folders
   const syncAll = useCallback(async () => {
     if (!activeProject || !projectId || syncingAll) return;
     setSyncingAll(true);
@@ -204,11 +202,15 @@ export function CoveragePage() {
     const allPaths = collectLeafPaths(folderTree, activeProject);
     let success = 0;
     let failed = 0;
+    const CONCURRENCY = 3;
 
-    for (const p of allPaths) {
-      const ok = await syncFolder(p);
-      if (ok) success++;
-      else failed++;
+    for (let i = 0; i < allPaths.length; i += CONCURRENCY) {
+      const batch = allPaths.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(batch.map(p => syncFolder(p)));
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) success++;
+        else failed++;
+      }
     }
 
     setSyncingAll(false);
@@ -252,7 +254,7 @@ export function CoveragePage() {
     a.href = url;
     a.download = filename;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, []);
 
   const downloadFolder = useCallback(async (folderPath: string) => {
@@ -285,8 +287,6 @@ export function CoveragePage() {
     );
   }, [previewTests, searchQuery]);
 
-  // Counts — only count leaf folders to avoid double-counting from parent syncs
-  const totalFolders = useMemo(() => countFolders(folderTree), [folderTree]);
   const leafPaths = useMemo(() => new Set(collectLeafPaths(folderTree, activeProject ?? undefined)), [folderTree, activeProject]);
   const leafFolderCount = leafPaths.size;
   const syncedCount = useMemo(() => {
@@ -334,7 +334,7 @@ export function CoveragePage() {
           <button
             data-testid="coverage-sync-all-btn"
             onClick={syncAll}
-            disabled={syncingAll || loading || totalFolders === 0}
+            disabled={syncingAll || loading || leafFolderCount === 0}
             className={`px-4 py-2 text-sm font-medium rounded-lg bg-accent text-white transition-colors flex items-center gap-2 ${
               syncingAll || loading ? 'opacity-75 cursor-not-allowed' : 'hover:bg-accent-hover'
             }`}
@@ -357,8 +357,8 @@ export function CoveragePage() {
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-text-primary">Folders</span>
-                {totalFolders > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-badge-bg text-badge-text">{totalFolders}</span>
+                {leafFolderCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-badge-bg text-badge-text">{leafFolderCount}</span>
                 )}
               </div>
             </div>
@@ -400,7 +400,7 @@ export function CoveragePage() {
           </div>
 
           {/* Sync Summary — separate card below folder tree */}
-          {totalFolders > 0 && (
+          {leafFolderCount > 0 && (
             <div className="mt-3 bg-card border border-border rounded-lg" data-testid="coverage-sync-summary">
               <div className="px-4 py-3 border-b border-border">
                 <p className="text-xs font-semibold text-text-primary uppercase tracking-wider">Sync Summary</p>
@@ -544,7 +544,7 @@ export function CoveragePage() {
                     <span>
                       {searchQuery
                         ? `Showing ${filteredTests.length} of ${previewTests.length} test cases (filtered)`
-                        : `Showing ${previewTests.length} of ${previewTests.length} test cases`
+                        : `${previewTests.length} test cases`
                       }
                     </span>
                     {selectedSyncInfo?.lastSyncedAt && (

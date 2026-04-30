@@ -383,9 +383,12 @@ function SidebarLink({
       (item.path === '/test-cases' && location.pathname.startsWith('/test-cases') &&
        !location.pathname.includes('/new') && !location.pathname.includes('/edit'));
 
+  const slug = item.label.toLowerCase().replace(/\s+/g, '-');
+
   return (
     <NavLink
       to={item.path}
+      data-testid={`sidebar-nav-${slug}-link`}
       className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
         isActive
           ? 'bg-accent text-white'
