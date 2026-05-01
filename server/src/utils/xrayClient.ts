@@ -1428,7 +1428,8 @@ export interface TestPlanStatusSummary {
 }
 
 export async function getTestPlanStatusSummary(issueId: string): Promise<TestPlanStatusSummary> {
-  const query = `
+  // Step 1: Get plan metadata and execution IDs
+  const planQuery = `
     query GetTestPlan($issueId: String!) {
       getTestPlan(issueId: $issueId) {
         issueId
@@ -1453,7 +1454,7 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     }
   `;
 
-  interface Result {
+  interface PlanResult {
     getTestPlan: {
       issueId: string;
       jira?: { key: string; summary: string };
@@ -1473,14 +1474,14 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     } | null;
   }
 
-  const data = await executeGraphQL<Result>(query, { issueId });
-  const plan = data.getTestPlan;
+  const planData = await executeGraphQL<PlanResult>(planQuery, { issueId });
+  const plan = planData.getTestPlan;
 
   if (!plan) {
     return { issueId, key: '', summary: '', totalTests: 0, totalExecutions: 0, statuses: [] };
   }
 
-  // Deduplicate tests: keep the last (most recent) status per test issueId
+  // Deduplicate tests: keep the last status per test issueId
   const testStatusMap = new Map<string, { name: string; color?: string }>();
 
   for (const exec of plan.testExecutions?.results || []) {
@@ -1490,6 +1491,7 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     }
   }
 
+  // Step 3: Aggregate
   const statusCounts: Record<string, { count: number; color: string }> = {};
 
   for (const status of testStatusMap.values()) {
