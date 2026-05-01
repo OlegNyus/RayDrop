@@ -206,7 +206,15 @@ export const xrayApi = {
     labels: string[];
   }>(`/xray/precondition/${issueId}`),
 
-  // Get test execution status summary
+  getTestPlanStatus: (issueId: string) => request<{
+    issueId: string;
+    key: string;
+    summary: string;
+    totalTests: number;
+    totalExecutions: number;
+    statuses: Array<{ status: string; count: number; color: string }>;
+  }>(`/xray/test-plan/${issueId}/status`),
+
   getTestExecutionStatus: (issueId: string) => request<{
     issueId: string;
     key: string;

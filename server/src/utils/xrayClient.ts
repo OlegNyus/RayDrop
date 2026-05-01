@@ -1418,6 +1418,104 @@ export async function getTestExecutionStatusSummary(issueId: string): Promise<Te
   };
 }
 
+export interface TestPlanStatusSummary {
+  issueId: string;
+  key: string;
+  summary: string;
+  totalTests: number;
+  totalExecutions: number;
+  statuses: TestRunStatus[];
+}
+
+export async function getTestPlanStatusSummary(issueId: string): Promise<TestPlanStatusSummary> {
+  const query = `
+    query GetTestPlan($issueId: String!) {
+      getTestPlan(issueId: $issueId) {
+        issueId
+        jira(fields: ["key", "summary"])
+        testExecutions(limit: 100) {
+          total
+          results {
+            issueId
+            tests(limit: 100) {
+              total
+              results {
+                issueId
+                status {
+                  name
+                  color
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  interface Result {
+    getTestPlan: {
+      issueId: string;
+      jira?: { key: string; summary: string };
+      testExecutions?: {
+        total: number;
+        results: Array<{
+          issueId: string;
+          tests?: {
+            total: number;
+            results: Array<{
+              issueId: string;
+              status?: { name: string; color?: string };
+            }>;
+          };
+        }>;
+      };
+    } | null;
+  }
+
+  const data = await executeGraphQL<Result>(query, { issueId });
+  const plan = data.getTestPlan;
+
+  if (!plan) {
+    return { issueId, key: '', summary: '', totalTests: 0, totalExecutions: 0, statuses: [] };
+  }
+
+  // Deduplicate tests: keep the last (most recent) status per test issueId
+  const testStatusMap = new Map<string, { name: string; color?: string }>();
+
+  for (const exec of plan.testExecutions?.results || []) {
+    for (const t of exec.tests?.results || []) {
+      const statusName = t.status?.name || 'TODO';
+      testStatusMap.set(t.issueId, { name: statusName, color: t.status?.color });
+    }
+  }
+
+  const statusCounts: Record<string, { count: number; color: string }> = {};
+
+  for (const status of testStatusMap.values()) {
+    if (!statusCounts[status.name]) {
+      statusCounts[status.name] = {
+        count: 0,
+        color: status.color || STATUS_COLORS[status.name.toUpperCase()] || '#6B7280',
+      };
+    }
+    statusCounts[status.name].count++;
+  }
+
+  const statuses: TestRunStatus[] = Object.entries(statusCounts)
+    .map(([status, d]) => ({ status, count: d.count, color: d.color }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    issueId: plan.issueId,
+    key: plan.jira?.key || '',
+    summary: plan.jira?.summary || '',
+    totalTests: testStatusMap.size,
+    totalExecutions: plan.testExecutions?.total || 0,
+    statuses,
+  };
+}
+
 export async function getPreconditionDetails(issueId: string): Promise<PreconditionDetails> {
   const query = `
     query GetPrecondition($issueId: String!) {
