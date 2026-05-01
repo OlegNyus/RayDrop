@@ -1428,25 +1428,46 @@ export interface TestPlanStatusSummary {
 }
 
 export async function getTestPlanStatusSummary(issueId: string): Promise<TestPlanStatusSummary> {
-  // Step 1: Get plan metadata and execution IDs
-  const planQuery = `
+  // Query the test plan's own tests with pagination — this matches Xray's "TOTAL TESTS" count
+  const metaQuery = `
     query GetTestPlan($issueId: String!) {
       getTestPlan(issueId: $issueId) {
         issueId
         jira(fields: ["key", "summary"])
-        testExecutions(limit: 100) {
-          total
+        tests(limit: 1) { total }
+        testExecutions(limit: 1) { total }
+      }
+    }
+  `;
+
+  interface MetaResult {
+    getTestPlan: {
+      issueId: string;
+      jira?: { key: string; summary: string };
+      tests?: { total: number };
+      testExecutions?: { total: number };
+    } | null;
+  }
+
+  const metaData = await executeGraphQL<MetaResult>(metaQuery, { issueId });
+  const plan = metaData.getTestPlan;
+
+  if (!plan) {
+    return { issueId, key: '', summary: '', totalTests: 0, totalExecutions: 0, statuses: [] };
+  }
+
+  const totalTests = plan.tests?.total || 0;
+  const totalExecutions = plan.testExecutions?.total || 0;
+
+  // Paginate through all tests in the plan
+  const testQuery = `
+    query GetTestPlanTests($issueId: String!, $limit: Int!, $start: Int!) {
+      getTestPlan(issueId: $issueId) {
+        tests(limit: $limit, start: $start) {
           results {
-            issueId
-            tests(limit: 100) {
-              total
-              results {
-                issueId
-                status {
-                  name
-                  color
-                }
-              }
+            status {
+              name
+              color
             }
           }
         }
@@ -1454,54 +1475,37 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     }
   `;
 
-  interface PlanResult {
+  interface TestResult {
     getTestPlan: {
-      issueId: string;
-      jira?: { key: string; summary: string };
-      testExecutions?: {
-        total: number;
-        results: Array<{
-          issueId: string;
-          tests?: {
-            total: number;
-            results: Array<{
-              issueId: string;
-              status?: { name: string; color?: string };
-            }>;
-          };
-        }>;
+      tests: {
+        results: Array<{ status?: { name: string; color?: string } }>;
       };
-    } | null;
+    };
   }
 
-  const planData = await executeGraphQL<PlanResult>(planQuery, { issueId });
-  const plan = planData.getTestPlan;
-
-  if (!plan) {
-    return { issueId, key: '', summary: '', totalTests: 0, totalExecutions: 0, statuses: [] };
-  }
-
-  // Deduplicate tests: keep the last status per test issueId
-  const testStatusMap = new Map<string, { name: string; color?: string }>();
-
-  for (const exec of plan.testExecutions?.results || []) {
-    for (const t of exec.tests?.results || []) {
-      const statusName = t.status?.name || 'TODO';
-      testStatusMap.set(t.issueId, { name: statusName, color: t.status?.color });
-    }
-  }
-
-  // Step 3: Aggregate
   const statusCounts: Record<string, { count: number; color: string }> = {};
+  const PAGE_SIZE = 100;
+  let start = 0;
 
-  for (const status of testStatusMap.values()) {
-    if (!statusCounts[status.name]) {
-      statusCounts[status.name] = {
-        count: 0,
-        color: status.color || STATUS_COLORS[status.name.toUpperCase()] || '#6B7280',
-      };
+  while (start < totalTests) {
+    const data = await executeGraphQL<TestResult>(testQuery, {
+      issueId,
+      limit: PAGE_SIZE,
+      start,
+    });
+
+    for (const t of data.getTestPlan?.tests?.results || []) {
+      const statusName = t.status?.name || 'TODO';
+      if (!statusCounts[statusName]) {
+        statusCounts[statusName] = {
+          count: 0,
+          color: t.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
+        };
+      }
+      statusCounts[statusName].count++;
     }
-    statusCounts[status.name].count++;
+
+    start += PAGE_SIZE;
   }
 
   const statuses: TestRunStatus[] = Object.entries(statusCounts)
@@ -1512,8 +1516,8 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     issueId: plan.issueId,
     key: plan.jira?.key || '',
     summary: plan.jira?.summary || '',
-    totalTests: testStatusMap.size,
-    totalExecutions: plan.testExecutions?.total || 0,
+    totalTests,
+    totalExecutions,
     statuses,
   };
 }
