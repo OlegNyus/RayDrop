@@ -1428,7 +1428,6 @@ export interface TestPlanStatusSummary {
 }
 
 export async function getTestPlanStatusSummary(issueId: string): Promise<TestPlanStatusSummary> {
-  // Query the test plan's own tests with pagination — this matches Xray's "TOTAL TESTS" count
   const metaQuery = `
     query GetTestPlan($issueId: String!) {
       getTestPlan(issueId: $issueId) {
@@ -1459,53 +1458,112 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
   const totalTests = plan.tests?.total || 0;
   const totalExecutions = plan.testExecutions?.total || 0;
 
-  // Paginate through all tests in the plan
-  const testQuery = `
+  // Get the test plan's test IDs (for filtering) and execution IDs
+  const planTestsQuery = `
     query GetTestPlanTests($issueId: String!, $limit: Int!, $start: Int!) {
       getTestPlan(issueId: $issueId) {
         tests(limit: $limit, start: $start) {
-          results {
-            status {
-              name
-              color
-            }
+          results { issueId }
+        }
+      }
+    }
+  `;
+
+  interface PlanTestsResult {
+    getTestPlan: { tests: { results: Array<{ issueId: string }> } };
+  }
+
+  const planTestIds = new Set<string>();
+  let ptStart = 0;
+  while (ptStart < totalTests) {
+    const ptData = await executeGraphQL<PlanTestsResult>(planTestsQuery, { issueId, limit: 100, start: ptStart });
+    for (const t of ptData.getTestPlan?.tests?.results || []) planTestIds.add(t.issueId);
+    ptStart += 100;
+  }
+
+  const execQuery = `
+    query GetTestPlanExecs($issueId: String!) {
+      getTestPlan(issueId: $issueId) {
+        testExecutions(limit: 100) {
+          results { issueId }
+        }
+      }
+    }
+  `;
+
+  interface ExecResult {
+    getTestPlan: {
+      testExecutions?: { results: Array<{ issueId: string }> };
+    };
+  }
+
+  const execData = await executeGraphQL<ExecResult>(execQuery, { issueId });
+  const execIds = execData.getTestPlan?.testExecutions?.results.map(e => e.issueId) || [];
+
+  const runsQuery = `
+    query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!, $start: Int!) {
+      getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit, start: $start) {
+        total
+        results {
+          test {
+            issueId
+          }
+          status {
+            name
+            color
           }
         }
       }
     }
   `;
 
-  interface TestResult {
-    getTestPlan: {
-      tests: {
-        results: Array<{ status?: { name: string; color?: string } }>;
-      };
+  interface RunsResult {
+    getTestRuns: {
+      total: number;
+      results: Array<{
+        test?: { issueId: string };
+        status?: { name: string; color?: string };
+      }>;
     };
   }
 
-  const statusCounts: Record<string, { count: number; color: string }> = {};
+  // Paginate all test runs across all executions, deduplicate by test issueId
+  const testStatusMap = new Map<string, { name: string; color?: string }>();
   const PAGE_SIZE = 100;
   let start = 0;
+  let totalRuns = 0;
 
-  while (start < totalTests) {
-    const data = await executeGraphQL<TestResult>(testQuery, {
-      issueId,
+  do {
+    const data = await executeGraphQL<RunsResult>(runsQuery, {
+      testExecIssueIds: execIds,
       limit: PAGE_SIZE,
       start,
     });
 
-    for (const t of data.getTestPlan?.tests?.results || []) {
-      const statusName = t.status?.name || 'TODO';
-      if (!statusCounts[statusName]) {
-        statusCounts[statusName] = {
-          count: 0,
-          color: t.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
-        };
+    totalRuns = data.getTestRuns?.total || 0;
+
+    for (const run of data.getTestRuns?.results || []) {
+      if (run.test?.issueId && planTestIds.has(run.test.issueId)) {
+        testStatusMap.set(run.test.issueId, {
+          name: run.status?.name || 'TODO',
+          color: run.status?.color,
+        });
       }
-      statusCounts[statusName].count++;
     }
 
     start += PAGE_SIZE;
+  } while (start < totalRuns);
+
+  const statusCounts: Record<string, { count: number; color: string }> = {};
+
+  for (const status of testStatusMap.values()) {
+    if (!statusCounts[status.name]) {
+      statusCounts[status.name] = {
+        count: 0,
+        color: status.color || STATUS_COLORS[status.name.toUpperCase()] || '#6B7280',
+      };
+    }
+    statusCounts[status.name].count++;
   }
 
   const statuses: TestRunStatus[] = Object.entries(statusCounts)
