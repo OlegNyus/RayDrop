@@ -552,7 +552,6 @@ export interface TestExecutionWithStatus extends XrayEntity {
 }
 
 export async function getTestExecutions(projectKey: string): Promise<TestExecutionWithStatus[]> {
-  // First get the test executions
   const execQuery = `
     query GetTestExecutions($jql: String!, $limit: Int!) {
       getTestExecutions(jql: $jql, limit: $limit) {
@@ -560,6 +559,15 @@ export async function getTestExecutions(projectKey: string): Promise<TestExecuti
         results {
           issueId
           jira(fields: ["key", "summary"])
+          tests(limit: 100) {
+            total
+            results {
+              status {
+                name
+                color
+              }
+            }
+          }
         }
       }
     }
@@ -567,7 +575,14 @@ export async function getTestExecutions(projectKey: string): Promise<TestExecuti
 
   interface ExecResult {
     getTestExecutions: {
-      results: Array<{ issueId: string; jira?: { key: string; summary: string } }>;
+      results: Array<{
+        issueId: string;
+        jira?: { key: string; summary: string };
+        tests?: {
+          total: number;
+          results: Array<{ status?: { name: string; color?: string } }>;
+        };
+      }>;
     };
   }
 
@@ -576,75 +591,21 @@ export async function getTestExecutions(projectKey: string): Promise<TestExecuti
     limit: 100,
   });
 
-  const executions = execData.getTestExecutions.results;
+  return execData.getTestExecutions.results.map((te) => {
+    const statusCounts: Record<string, { count: number; color: string }> = {};
 
-  if (executions.length === 0) {
-    return [];
-  }
-
-  // Get all test run statuses in a single batch request
-  const issueIds = executions.map(e => e.issueId);
-
-  const runsQuery = `
-    query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!) {
-      getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit) {
-        total
-        results {
-          status {
-            name
-            color
-          }
-          testExecution {
-            issueId
-          }
-        }
+    for (const t of te.tests?.results || []) {
+      const statusName = t.status?.name || 'TODO';
+      if (!statusCounts[statusName]) {
+        statusCounts[statusName] = {
+          count: 0,
+          color: t.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
+        };
       }
-    }
-  `;
-
-  interface RunsResult {
-    getTestRuns: {
-      total: number;
-      results: Array<{
-        status?: { name: string; color?: string };
-        testExecution?: { issueId: string };
-      }>;
-    } | null;
-  }
-
-  const runsData = await executeGraphQL<RunsResult>(runsQuery, {
-    testExecIssueIds: issueIds,
-    limit: 5000, // High limit to get all runs
-  });
-
-  // Group runs by execution
-  const statusByExecution: Record<string, Record<string, { count: number; color: string }>> = {};
-  const totalByExecution: Record<string, number> = {};
-
-  for (const run of runsData.getTestRuns?.results || []) {
-    const execId = run.testExecution?.issueId;
-    if (!execId) continue;
-
-    if (!statusByExecution[execId]) {
-      statusByExecution[execId] = {};
-      totalByExecution[execId] = 0;
+      statusCounts[statusName].count++;
     }
 
-    totalByExecution[execId]++;
-    const statusName = run.status?.name || 'TODO';
-
-    if (!statusByExecution[execId][statusName]) {
-      statusByExecution[execId][statusName] = {
-        count: 0,
-        color: run.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
-      };
-    }
-    statusByExecution[execId][statusName].count++;
-  }
-
-  // Build the result
-  return executions.map((te) => {
-    const statuses = Object.entries(statusByExecution[te.issueId] || {})
+    const statuses = Object.entries(statusCounts)
       .map(([status, data]) => ({ status, ...data }))
       .sort((a, b) => b.count - a.count);
 
@@ -652,7 +613,7 @@ export async function getTestExecutions(projectKey: string): Promise<TestExecuti
       issueId: te.issueId,
       key: te.jira?.key || '',
       summary: te.jira?.summary || '',
-      totalTests: totalByExecution[te.issueId] || 0,
+      totalTests: te.tests?.total || 0,
       statuses,
     };
   });
@@ -1384,52 +1345,37 @@ function getJiraStatusColor(colorName?: string): string {
 }
 
 export async function getTestExecutionStatusSummary(issueId: string): Promise<TestExecutionStatusSummary> {
-  // First get the test execution details
-  const execQuery = `
+  const query = `
     query GetTestExecution($issueId: String!) {
       getTestExecution(issueId: $issueId) {
         issueId
         jira(fields: ["key", "summary"])
-      }
-    }
-  `;
-
-  // Then get test runs with status using getTestRuns query
-  const runsQuery = `
-    query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!) {
-      getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit) {
-        total
-        results {
-          status {
-            name
-            color
+        tests(limit: 100) {
+          total
+          results {
+            status {
+              name
+              color
+            }
           }
         }
       }
     }
   `;
 
-  interface ExecResult {
+  interface Result {
     getTestExecution: {
       issueId: string;
       jira?: { key: string; summary: string };
+      tests?: {
+        total: number;
+        results: Array<{ status?: { name: string; color?: string } }>;
+      };
     } | null;
   }
 
-  interface RunsResult {
-    getTestRuns: {
-      total: number;
-      results: Array<{ status?: { name: string; color?: string } }>;
-    } | null;
-  }
-
-  const [execData, runsData] = await Promise.all([
-    executeGraphQL<ExecResult>(execQuery, { issueId }),
-    executeGraphQL<RunsResult>(runsQuery, { testExecIssueIds: [issueId], limit: 1000 }),
-  ]);
-
-  const execution = execData.getTestExecution;
-  const runs = runsData.getTestRuns;
+  const data = await executeGraphQL<Result>(query, { issueId });
+  const execution = data.getTestExecution;
 
   if (!execution) {
     return {
@@ -1441,34 +1387,33 @@ export async function getTestExecutionStatusSummary(issueId: string): Promise<Te
     };
   }
 
-  // Count statuses
+  const tests = execution.tests;
   const statusCounts: Record<string, { count: number; color: string }> = {};
 
-  for (const run of runs?.results || []) {
-    const statusName = run.status?.name || 'TODO';
+  for (const t of tests?.results || []) {
+    const statusName = t.status?.name || 'TODO';
     if (!statusCounts[statusName]) {
       statusCounts[statusName] = {
         count: 0,
-        color: run.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
+        color: t.status?.color || STATUS_COLORS[statusName.toUpperCase()] || '#6B7280',
       };
     }
     statusCounts[statusName].count++;
   }
 
-  const statuses: TestRunStatus[] = Object.entries(statusCounts).map(([status, data]) => ({
+  const statuses: TestRunStatus[] = Object.entries(statusCounts).map(([status, d]) => ({
     status,
-    count: data.count,
-    color: data.color,
+    count: d.count,
+    color: d.color,
   }));
 
-  // Sort by count descending
   statuses.sort((a, b) => b.count - a.count);
 
   return {
     issueId: execution.issueId,
     key: execution.jira?.key || '',
     summary: execution.jira?.summary || '',
-    totalTests: runs?.total || 0,
+    totalTests: tests?.total || 0,
     statuses,
   };
 }
