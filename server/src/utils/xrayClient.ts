@@ -1485,7 +1485,10 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     query GetTestPlanExecs($issueId: String!) {
       getTestPlan(issueId: $issueId) {
         testExecutions(limit: 100) {
-          results { issueId }
+          results {
+            issueId
+            jira(fields: ["key"])
+          }
         }
       }
     }
@@ -1493,25 +1496,36 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
 
   interface ExecResult {
     getTestPlan: {
-      testExecutions?: { results: Array<{ issueId: string }> };
+      testExecutions?: { results: Array<{ issueId: string; jira?: { key: string } }> };
     };
   }
 
   const execData = await executeGraphQL<ExecResult>(execQuery, { issueId });
-  const execIds = execData.getTestPlan?.testExecutions?.results.map(e => e.issueId) || [];
+  const execs = execData.getTestPlan?.testExecutions?.results || [];
+
+  // Sort by Jira key number (higher = more recent) for correct final status
+  execs.sort((a, b) => {
+    const aNum = parseInt(a.jira?.key?.split('-')[1] || '0', 10);
+    const bNum = parseInt(b.jira?.key?.split('-')[1] || '0', 10);
+    return aNum - bNum;
+  });
+
+  // Build execution recency map from Jira keys
+  const execIds = execs.map(e => e.issueId);
+  const execRecency = new Map<string, number>();
+  for (const e of execs) {
+    const keyNum = parseInt(e.jira?.key?.split('-')[1] || '0', 10);
+    execRecency.set(e.issueId, keyNum);
+  }
 
   const runsQuery = `
     query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!, $start: Int!) {
       getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit, start: $start) {
         total
         results {
-          test {
-            issueId
-          }
-          status {
-            name
-            color
-          }
+          test { issueId }
+          testExecution { issueId }
+          status { name color }
         }
       }
     }
@@ -1522,13 +1536,16 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
       total: number;
       results: Array<{
         test?: { issueId: string };
+        testExecution?: { issueId: string };
         status?: { name: string; color?: string };
       }>;
     };
   }
 
-  // Paginate all test runs across all executions, deduplicate by test issueId
-  const testStatusMap = new Map<string, { name: string; color?: string }>();
+  // Collect all runs, then resolve final status per test:
+  // - Non-TODO status from the most recent execution wins
+  // - If a test only has TODO runs, it stays TODO
+  const allRuns: Array<{ testId: string; execKeyNum: number; status: string; color?: string }> = [];
   const PAGE_SIZE = 100;
   let start = 0;
   let totalRuns = 0;
@@ -1543,16 +1560,39 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     totalRuns = data.getTestRuns?.total || 0;
 
     for (const run of data.getTestRuns?.results || []) {
-      if (run.test?.issueId && planTestIds.has(run.test.issueId)) {
-        testStatusMap.set(run.test.issueId, {
-          name: run.status?.name || 'TODO',
-          color: run.status?.color,
-        });
-      }
+      const testId = run.test?.issueId;
+      if (!testId || !planTestIds.has(testId)) continue;
+
+      const execKeyNum = execRecency.get(run.testExecution?.issueId || '') ?? 0;
+      allRuns.push({
+        testId,
+        execKeyNum,
+        status: run.status?.name || 'TODO',
+        color: run.status?.color,
+      });
     }
 
     start += PAGE_SIZE;
   } while (start < totalRuns);
+
+  // Group runs by test, pick the status from the most recent execution
+  // that has a non-TODO status (matching Xray's "final status" behavior)
+  const testStatusMap = new Map<string, { name: string; color?: string }>();
+
+  const runsByTest = new Map<string, typeof allRuns>();
+  for (const run of allRuns) {
+    if (!runsByTest.has(run.testId)) runsByTest.set(run.testId, []);
+    runsByTest.get(run.testId)!.push(run);
+  }
+
+  for (const [testId, runs] of runsByTest) {
+    // Sort by execution recency (highest key number = most recent)
+    runs.sort((a, b) => b.execKeyNum - a.execKeyNum);
+
+    // Use the most recent non-TODO status (matching Xray's final status)
+    const finalRun = runs.find(r => r.status !== 'TODO') || runs[0];
+    testStatusMap.set(testId, { name: finalRun.status, color: finalRun.color });
+  }
 
   const statusCounts: Record<string, { count: number; color: string }> = {};
 
