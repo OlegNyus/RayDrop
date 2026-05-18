@@ -1482,9 +1482,9 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
   }
 
   const execQuery = `
-    query GetTestPlanExecs($issueId: String!) {
+    query GetTestPlanExecs($issueId: String!, $limit: Int!, $start: Int!) {
       getTestPlan(issueId: $issueId) {
-        testExecutions(limit: 100) {
+        testExecutions(limit: $limit, start: $start) {
           results {
             issueId
             jira(fields: ["key"])
@@ -1500,8 +1500,15 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     };
   }
 
-  const execData = await executeGraphQL<ExecResult>(execQuery, { issueId });
-  const execs = execData.getTestPlan?.testExecutions?.results || [];
+  const execs: Array<{ issueId: string; jira?: { key: string } }> = [];
+  let exStart = 0;
+  while (exStart < totalExecutions) {
+    const execData = await executeGraphQL<ExecResult>(execQuery, { issueId, limit: 100, start: exStart });
+    const page = execData.getTestPlan?.testExecutions?.results || [];
+    if (page.length === 0) break;
+    execs.push(...page);
+    exStart += 100;
+  }
 
   // Sort by Jira key number (higher = more recent) for correct final status
   execs.sort((a, b) => {
@@ -1592,6 +1599,15 @@ export async function getTestPlanStatusSummary(issueId: string): Promise<TestPla
     // Use the most recent non-TODO status (matching Xray's final status)
     const finalRun = runs.find(r => r.status !== 'TODO') || runs[0];
     testStatusMap.set(testId, { name: finalRun.status, color: finalRun.color });
+  }
+
+  // Plan tests with no runs in any execution stay in the breakdown as NOT RUN
+  // so status counts sum to totalTests and the progress bar fills 100%.
+  const NOT_RUN_COLOR = '#A2A6AE';
+  for (const planTestId of planTestIds) {
+    if (!testStatusMap.has(planTestId)) {
+      testStatusMap.set(planTestId, { name: 'NOT RUN', color: NOT_RUN_COLOR });
+    }
   }
 
   const statusCounts: Record<string, { count: number; color: string }> = {};
