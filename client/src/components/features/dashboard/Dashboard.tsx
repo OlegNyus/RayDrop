@@ -218,20 +218,24 @@ export function Dashboard() {
       return;
     }
 
+    let cancelled = false;
     const fetchStatus = async () => {
       setLoadingPlanStatus(true);
       try {
         const data = await xrayApi.getTestPlanStatus(selectedPlanId);
-        setPlanStatus(data);
+        if (!cancelled) setPlanStatus(data);
       } catch (err) {
-        console.error('Failed to fetch plan status:', err);
-        setPlanStatus(null);
+        if (!cancelled) {
+          console.error('Failed to fetch plan status:', err);
+          setPlanStatus(null);
+        }
       } finally {
-        setLoadingPlanStatus(false);
+        if (!cancelled) setLoadingPlanStatus(false);
       }
     };
 
     fetchStatus();
+    return () => { cancelled = true; };
   }, [selectedPlanId]);
 
   return (
@@ -445,11 +449,17 @@ export function Dashboard() {
               </div>
             </div>
           ) : testPlans.length === 0 ? (
-            <p className="text-text-muted text-center py-8">
+            <p
+              className="text-text-muted text-center py-8"
+              data-testid="dashboard-plan-status-empty"
+            >
               No test plans found in {activeProject}
             </p>
           ) : (
-            <p className="text-text-muted text-center py-8">
+            <p
+              className="text-text-muted text-center py-8"
+              data-testid="dashboard-plan-status-prompt"
+            >
               Select a test plan to view release status
             </p>
           )}

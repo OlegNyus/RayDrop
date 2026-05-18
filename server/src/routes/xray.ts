@@ -592,7 +592,6 @@ router.get('/test-plan/:issueId/status', async (req: Request, res: Response) => 
   }
 });
 
-
 /**
  * @swagger
  * /api/xray/tests/by-prefix/{projectKey}:
