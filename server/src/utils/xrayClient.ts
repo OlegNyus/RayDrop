@@ -1418,6 +1418,224 @@ export async function getTestExecutionStatusSummary(issueId: string): Promise<Te
   };
 }
 
+export interface TestPlanStatusSummary {
+  issueId: string;
+  key: string;
+  summary: string;
+  totalTests: number;
+  totalExecutions: number;
+  statuses: TestRunStatus[];
+}
+
+export async function getTestPlanStatusSummary(issueId: string): Promise<TestPlanStatusSummary> {
+  const metaQuery = `
+    query GetTestPlan($issueId: String!) {
+      getTestPlan(issueId: $issueId) {
+        issueId
+        jira(fields: ["key", "summary"])
+        tests(limit: 1) { total }
+        testExecutions(limit: 1) { total }
+      }
+    }
+  `;
+
+  interface MetaResult {
+    getTestPlan: {
+      issueId: string;
+      jira?: { key: string; summary: string };
+      tests?: { total: number };
+      testExecutions?: { total: number };
+    } | null;
+  }
+
+  const metaData = await executeGraphQL<MetaResult>(metaQuery, { issueId });
+  const plan = metaData.getTestPlan;
+
+  if (!plan) {
+    return { issueId, key: '', summary: '', totalTests: 0, totalExecutions: 0, statuses: [] };
+  }
+
+  const totalTests = plan.tests?.total || 0;
+  const totalExecutions = plan.testExecutions?.total || 0;
+
+  // Get the test plan's test IDs (for filtering) and execution IDs
+  const planTestsQuery = `
+    query GetTestPlanTests($issueId: String!, $limit: Int!, $start: Int!) {
+      getTestPlan(issueId: $issueId) {
+        tests(limit: $limit, start: $start) {
+          results { issueId }
+        }
+      }
+    }
+  `;
+
+  interface PlanTestsResult {
+    getTestPlan: { tests: { results: Array<{ issueId: string }> } };
+  }
+
+  const planTestIds = new Set<string>();
+  let ptStart = 0;
+  while (ptStart < totalTests) {
+    const ptData = await executeGraphQL<PlanTestsResult>(planTestsQuery, { issueId, limit: 100, start: ptStart });
+    for (const t of ptData.getTestPlan?.tests?.results || []) planTestIds.add(t.issueId);
+    ptStart += 100;
+  }
+
+  const execQuery = `
+    query GetTestPlanExecs($issueId: String!, $limit: Int!, $start: Int!) {
+      getTestPlan(issueId: $issueId) {
+        testExecutions(limit: $limit, start: $start) {
+          results {
+            issueId
+            jira(fields: ["key"])
+          }
+        }
+      }
+    }
+  `;
+
+  interface ExecResult {
+    getTestPlan: {
+      testExecutions?: { results: Array<{ issueId: string; jira?: { key: string } }> };
+    };
+  }
+
+  const execs: Array<{ issueId: string; jira?: { key: string } }> = [];
+  let exStart = 0;
+  while (exStart < totalExecutions) {
+    const execData = await executeGraphQL<ExecResult>(execQuery, { issueId, limit: 100, start: exStart });
+    const page = execData.getTestPlan?.testExecutions?.results || [];
+    if (page.length === 0) break;
+    execs.push(...page);
+    exStart += 100;
+  }
+
+  // Sort by Jira key number (higher = more recent) for correct final status
+  execs.sort((a, b) => {
+    const aNum = parseInt(a.jira?.key?.split('-')[1] || '0', 10);
+    const bNum = parseInt(b.jira?.key?.split('-')[1] || '0', 10);
+    return aNum - bNum;
+  });
+
+  // Build execution recency map from Jira keys
+  const execIds = execs.map(e => e.issueId);
+  const execRecency = new Map<string, number>();
+  for (const e of execs) {
+    const keyNum = parseInt(e.jira?.key?.split('-')[1] || '0', 10);
+    execRecency.set(e.issueId, keyNum);
+  }
+
+  const runsQuery = `
+    query GetTestRuns($testExecIssueIds: [String]!, $limit: Int!, $start: Int!) {
+      getTestRuns(testExecIssueIds: $testExecIssueIds, limit: $limit, start: $start) {
+        total
+        results {
+          test { issueId }
+          testExecution { issueId }
+          status { name color }
+        }
+      }
+    }
+  `;
+
+  interface RunsResult {
+    getTestRuns: {
+      total: number;
+      results: Array<{
+        test?: { issueId: string };
+        testExecution?: { issueId: string };
+        status?: { name: string; color?: string };
+      }>;
+    };
+  }
+
+  // Collect all runs, then resolve final status per test:
+  // - Non-TODO status from the most recent execution wins
+  // - If a test only has TODO runs, it stays TODO
+  const allRuns: Array<{ testId: string; execKeyNum: number; status: string; color?: string }> = [];
+  const PAGE_SIZE = 100;
+  let start = 0;
+  let totalRuns = 0;
+
+  do {
+    const data = await executeGraphQL<RunsResult>(runsQuery, {
+      testExecIssueIds: execIds,
+      limit: PAGE_SIZE,
+      start,
+    });
+
+    totalRuns = data.getTestRuns?.total || 0;
+
+    for (const run of data.getTestRuns?.results || []) {
+      const testId = run.test?.issueId;
+      if (!testId || !planTestIds.has(testId)) continue;
+
+      const execKeyNum = execRecency.get(run.testExecution?.issueId || '') ?? 0;
+      allRuns.push({
+        testId,
+        execKeyNum,
+        status: run.status?.name || 'TODO',
+        color: run.status?.color,
+      });
+    }
+
+    start += PAGE_SIZE;
+  } while (start < totalRuns);
+
+  // Group runs by test, pick the status from the most recent execution
+  // that has a non-TODO status (matching Xray's "final status" behavior)
+  const testStatusMap = new Map<string, { name: string; color?: string }>();
+
+  const runsByTest = new Map<string, typeof allRuns>();
+  for (const run of allRuns) {
+    if (!runsByTest.has(run.testId)) runsByTest.set(run.testId, []);
+    runsByTest.get(run.testId)!.push(run);
+  }
+
+  for (const [testId, runs] of runsByTest) {
+    // Sort by execution recency (highest key number = most recent)
+    runs.sort((a, b) => b.execKeyNum - a.execKeyNum);
+
+    // Use the most recent non-TODO status (matching Xray's final status)
+    const finalRun = runs.find(r => r.status !== 'TODO') || runs[0];
+    testStatusMap.set(testId, { name: finalRun.status, color: finalRun.color });
+  }
+
+  // Plan tests with no runs in any execution stay in the breakdown as NOT RUN
+  // so status counts sum to totalTests and the progress bar fills 100%.
+  const NOT_RUN_COLOR = '#A2A6AE';
+  for (const planTestId of planTestIds) {
+    if (!testStatusMap.has(planTestId)) {
+      testStatusMap.set(planTestId, { name: 'NOT RUN', color: NOT_RUN_COLOR });
+    }
+  }
+
+  const statusCounts: Record<string, { count: number; color: string }> = {};
+
+  for (const status of testStatusMap.values()) {
+    if (!statusCounts[status.name]) {
+      statusCounts[status.name] = {
+        count: 0,
+        color: status.color || STATUS_COLORS[status.name.toUpperCase()] || '#6B7280',
+      };
+    }
+    statusCounts[status.name].count++;
+  }
+
+  const statuses: TestRunStatus[] = Object.entries(statusCounts)
+    .map(([status, d]) => ({ status, count: d.count, color: d.color }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    issueId: plan.issueId,
+    key: plan.jira?.key || '',
+    summary: plan.jira?.summary || '',
+    totalTests,
+    totalExecutions,
+    statuses,
+  };
+}
+
 export async function getPreconditionDetails(issueId: string): Promise<PreconditionDetails> {
   const query = `
     query GetPrecondition($issueId: String!) {

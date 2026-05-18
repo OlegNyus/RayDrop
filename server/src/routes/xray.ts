@@ -25,6 +25,7 @@ import {
   getTestWithLinks,
   getPreconditionDetails,
   getTestExecutionStatusSummary,
+  getTestPlanStatusSummary,
   getTestsByStatus,
   getTestsByPrefix,
   updateExistingTest,
@@ -577,6 +578,17 @@ router.get('/test-execution/:issueId/status', async (req: Request, res: Response
   } catch (error) {
     console.error('Error fetching test execution status:', error);
     return res.status(500).json({ error: 'Failed to fetch test execution status' });
+  }
+});
+
+router.get('/test-plan/:issueId/status', async (req: Request, res: Response) => {
+  try {
+    const { issueId } = req.params;
+    const summary = await getTestPlanStatusSummary(issueId);
+    return res.json(summary);
+  } catch (error) {
+    console.error('Error fetching test plan status:', error);
+    return res.status(500).json({ error: 'Failed to fetch test plan status' });
   }
 });
 

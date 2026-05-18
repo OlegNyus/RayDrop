@@ -69,6 +69,15 @@ interface TestExecutionStatus {
   statuses: Array<{ status: string; count: number; color: string }>;
 }
 
+interface TestPlanStatus {
+  issueId: string;
+  key: string;
+  summary: string;
+  totalTests: number;
+  totalExecutions: number;
+  statuses: Array<{ status: string; count: number; color: string }>;
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const { drafts, activeProject, settings, isConfigured } = useApp();
@@ -79,6 +88,13 @@ export function Dashboard() {
   const [executionStatus, setExecutionStatus] = useState<TestExecutionStatus | null>(null);
   const [loadingExecutions, setLoadingExecutions] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
+
+  // Test Plan status state
+  const [testPlans, setTestPlans] = useState<XrayEntity[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [planStatus, setPlanStatus] = useState<TestPlanStatus | null>(null);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [loadingPlanStatus, setLoadingPlanStatus] = useState(false);
 
   const stats = {
     new: drafts.filter(d => d.status === 'new').length,
@@ -163,6 +179,64 @@ export function Dashboard() {
 
     fetchStatus();
   }, [selectedExecutionId]);
+
+  // Fetch test plans when project changes
+  useEffect(() => {
+    setTestPlans([]);
+    setSelectedPlanId(null);
+    setPlanStatus(null);
+
+    if (!activeProject || !isConfigured) return;
+
+    let cancelled = false;
+    const fetchPlans = async () => {
+      setLoadingPlans(true);
+      try {
+        const data = await xrayApi.getTestPlans(activeProject);
+        if (!cancelled) {
+          setTestPlans(data);
+          if (data.length > 0) setSelectedPlanId(data[0].issueId);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to fetch test plans:', err);
+          setTestPlans([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingPlans(false);
+      }
+    };
+
+    fetchPlans();
+    return () => { cancelled = true; };
+  }, [activeProject, isConfigured]);
+
+  // Fetch plan status when selection changes
+  useEffect(() => {
+    if (!selectedPlanId) {
+      setPlanStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchStatus = async () => {
+      setLoadingPlanStatus(true);
+      try {
+        const data = await xrayApi.getTestPlanStatus(selectedPlanId);
+        if (!cancelled) setPlanStatus(data);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to fetch plan status:', err);
+          setPlanStatus(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingPlanStatus(false);
+      }
+    };
+
+    fetchStatus();
+    return () => { cancelled = true; };
+  }, [selectedPlanId]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto px-4 py-6">
@@ -300,6 +374,93 @@ export function Dashboard() {
           ) : (
             <p className="text-text-muted text-center py-8">
               Select a test execution to view status
+            </p>
+          )}
+        </Card>
+      )}
+
+      {/* Test Plan Status */}
+      {isConfigured && activeProject && (
+        <Card>
+          <div className="flex items-center justify-between mb-4" data-testid="dashboard-plan-status-header">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <div>
+                <h3 className="text-lg font-semibold text-text-primary">Release Status</h3>
+                <p className="text-xs text-text-muted flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
+                  Test Plan from Xray
+                </p>
+              </div>
+            </div>
+
+            <ExecutionSelector
+              executions={testPlans}
+              selectedId={selectedPlanId}
+              onSelect={setSelectedPlanId}
+              loading={loadingPlans}
+            />
+          </div>
+
+          {loadingPlanStatus ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+            </div>
+          ) : planStatus && planStatus.totalTests > 0 ? (
+            <div data-testid="dashboard-plan-status-content">
+              {/* Stacked progress bar */}
+              <div className="w-full h-3 bg-sidebar rounded-full overflow-hidden flex">
+                {planStatus.statuses.map((s) => (
+                  <div
+                    key={s.status}
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: `${(s.count / planStatus.totalTests) * 100}%`,
+                      backgroundColor: s.color,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Big status numbers */}
+              <div className="flex flex-wrap gap-6 mt-5">
+                {planStatus.statuses.map((s) => (
+                  <div key={s.status} className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-bold tabular-nums" style={{ color: s.color }}>{s.count}</span>
+                    <span className="text-xs font-medium text-text-muted uppercase tracking-wide">{s.status}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer: metadata */}
+              <div className="flex items-center justify-between mt-5 pt-4 border-t border-border">
+                <div className="flex items-center gap-4">
+                  <TestKeyLink testKey={planStatus.key} />
+                  <span className="text-xs text-text-muted">{planStatus.totalExecutions} test execution{planStatus.totalExecutions !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-text-primary uppercase tracking-wide">Total Tests:</span>
+                  <span className="text-sm font-bold text-text-primary">{planStatus.totalTests}</span>
+                </div>
+              </div>
+            </div>
+          ) : testPlans.length === 0 ? (
+            <p
+              className="text-text-muted text-center py-8"
+              data-testid="dashboard-plan-status-empty"
+            >
+              No test plans found in {activeProject}
+            </p>
+          ) : (
+            <p
+              className="text-text-muted text-center py-8"
+              data-testid="dashboard-plan-status-prompt"
+            >
+              Select a test plan to view release status
             </p>
           )}
         </Card>
